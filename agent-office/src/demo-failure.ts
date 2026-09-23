@@ -32,9 +32,12 @@ class DeterministicFailureProvider implements ModelProvider {
             });
         } 
         else if (request.systemPrompt.includes("You are Ares")) {
+            const readyIssueMatch = request.prompt.match(/- \[([^\]]+)\]/);
+            const issueId = readyIssueMatch ? readyIssueMatch[1] : crypto.randomUUID();
+            
             mockContent = JSON.stringify({ 
                 type: "SCHEDULE", 
-                workers: [{ role: "developer", task: "Write API" }] 
+                tasks: [{ issueId, workerRole: "developer", task: "Write API" }] 
             });
         } 
         else if (request.systemPrompt.includes("You are Apollo")) {

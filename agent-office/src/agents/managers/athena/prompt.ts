@@ -6,5 +6,11 @@ Do NOT output anything except valid JSON matching this schema:
   "title": "Short title",
   "description": "Detailed description of what must be built next",
   "acceptanceCriteria": ["criteria 1", "criteria 2"],
-  "budget": 3
+  "budget": 3,
+  "suggestedTasks": [
+    {
+      "title": "Create user model",
+      "type": "TASK"
+    }
+  ]
 }`;

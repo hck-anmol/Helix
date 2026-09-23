@@ -15,7 +15,7 @@ export class StateMachine {
         const allowed: Record<MilestoneStatus, MilestoneStatus[]> = {
             PLANNED: ["ACTIVE"],
             ACTIVE: ["EXECUTING"],
-            EXECUTING: ["VERIFYING"],
+            EXECUTING: ["VERIFYING", "FAILED"],
             VERIFYING: ["COMPLETED", "FAILED"],
             FAILED: ["EXECUTING"],
             COMPLETED: [],

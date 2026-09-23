@@ -2,8 +2,9 @@ import { z } from "zod";
 
 export const AresOutputSchema = z.object({
     type: z.literal("SCHEDULE"),
-    workers: z.array(z.object({
-        role: z.enum(["developer", "tester", "researcher"]),
+    tasks: z.array(z.object({
+        issueId: z.string(),
+        workerRole: z.enum(["developer", "tester", "researcher"]),
         task: z.string()
     }))
 });

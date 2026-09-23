@@ -22,9 +22,18 @@ export class Reporter {
         let report = `# Milestone ${milestone.title}\n\n`;
         report += `Status: ${milestone.status}\n\n`;
         
-        report += `## Issues:\n`;
+        report += `## Issues:\n\n`;
         for (const issue of issues) {
-            report += `- [${issue.status}] ${issue.title} (Fix Attempts: ${issue.fixAttempts})\n`;
+            report += `### ${issue.id}\n`;
+            report += `${issue.title}\n`;
+            report += `Status: ${issue.status}\n`;
+            report += `Attempts: ${issue.attemptCount}\n`;
+            
+            const deps = this.issueRepo.getDependencies(issue.id);
+            if (deps.length > 0) {
+                report += `Depends on: ${deps.join(", ")}\n`;
+            }
+            report += "\n";
         }
 
         report += `\n## Verification attempts: ${verifications.length}\n\n`;

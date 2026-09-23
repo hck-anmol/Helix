@@ -7,7 +7,8 @@
     "demo": "ts-node src/demo.ts",
     "demo-failure": "ts-node src/demo-failure.ts",
     "status": "ts-node src/status.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "demo-multi-issue": "ts-node src/demo-multi-issue.ts",
+    "test": "ts-node tests/run.ts"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

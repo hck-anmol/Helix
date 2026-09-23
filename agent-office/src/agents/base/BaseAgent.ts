@@ -36,6 +36,8 @@ export abstract class BaseAgent<T = any> {
             this.runRepo.create({
                 id: runId,
                 projectId: context.projectId,
+                milestoneId: context.currentMilestoneId || "",
+                issueId: context.currentIssueId || "",
                 agentId: this.id,
                 role: this.role,
                 model,
@@ -52,6 +54,8 @@ export abstract class BaseAgent<T = any> {
             this.runRepo.create({
                 id: runId,
                 projectId: context.projectId,
+                milestoneId: context.currentMilestoneId || "",
+                issueId: context.currentIssueId || "",
                 agentId: this.id,
                 role: this.role,
                 model,

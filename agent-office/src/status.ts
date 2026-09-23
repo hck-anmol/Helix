@@ -19,17 +19,33 @@ function renderStatus() {
         return;
     }
 
-    console.log(`\nPhase:\n${project.currentPhase}`);
+    console.log(`\nPhase:\n${milestone.status}`);
     console.log(`\nMilestone:\n${milestone.title}`);
-    console.log(`\nMilestone Status:\n${milestone.status}`);
 
     const issues = db.prepare(`SELECT * FROM issues WHERE milestoneId = ?`).all(milestone.id) as any[];
+    
     if (issues.length > 0) {
+        const resolved = issues.filter(i => ["RESOLVED", "SUCCESS", "VERIFIED"].includes(i.status)).length;
+        const total = issues.length;
+        const progress = Math.round((resolved / total) * 100);
+        
+        const filled = Math.floor(progress / 10);
+        const empty = 10 - filled;
+        const bar = "█".repeat(filled) + "░".repeat(empty);
+        
+        console.log(`\nProgress:\n${bar} ${progress}%`);
         console.log(`\nIssues:`);
+        
         for (const issue of issues) {
-            const marker = issue.status === "VERIFIED" ? "✓" : "✗";
-            console.log(`${marker} ${issue.title} (${issue.status})`);
+            let marker = "○";
+            if (["RESOLVED", "SUCCESS", "VERIFIED"].includes(issue.status)) marker = "✓";
+            else if (issue.status === "RUNNING") marker = "●";
+            
+            console.log(`${marker} ${issue.title.padEnd(25)} ${issue.status}`);
         }
+    } else {
+        console.log(`\nProgress:\n░░░░░░░░░░ 0%`);
+        console.log(`\nIssues:\nNone`);
     }
 
     const runs = db.prepare(`
@@ -39,7 +55,7 @@ function renderStatus() {
     `).all(project.id) as any[];
     
     if (runs.length > 0) {
-        console.log(`\nWorkers (Latest runs):`);
+        console.log(`\nWorkers:`);
         const seen = new Set();
         for (const run of runs) {
             if (!seen.has(run.role)) {
@@ -50,11 +66,12 @@ function renderStatus() {
     }
 
     const verifications = db.prepare(`SELECT * FROM verification_runs WHERE milestoneId = ? ORDER BY attemptNumber ASC`).all(milestone.id) as any[];
+    console.log(`\nVerification:`);
     if (verifications.length > 0) {
-        console.log(`\nVerification:`);
-        for (const v of verifications) {
-            console.log(`Attempt ${v.attemptNumber}: ${v.status}`);
-        }
+        const last = verifications[verifications.length - 1];
+        console.log(last.status);
+    } else {
+        console.log("Not started");
     }
 
     console.log("\n========================================");

@@ -41,19 +41,19 @@ function runTests() {
         description: "Test Desc",
         type: "BUG",
         priority: "HIGH",
-        status: "OPEN",
+        status: "PENDING",
         fixAttempts: 0
     });
 
     let issue = issueRepo.get(issueId);
     assert.ok(issue);
     assert.strictEqual(issue.title, "Test Issue");
-    assert.strictEqual(issue.status, "OPEN");
+    assert.strictEqual(issue.status, "PENDING");
     assert.strictEqual(issue.fixAttempts, 0);
 
-    issueRepo.updateStatus(issueId, "IN_PROGRESS");
+    issueRepo.updateStatus(issueId, "RUNNING");
     issue = issueRepo.get(issueId);
-    assert.strictEqual(issue!.status, "IN_PROGRESS");
+    assert.strictEqual(issue!.status, "RUNNING");
 
     issueRepo.incrementFixAttempts(issueId);
     issue = issueRepo.get(issueId);
