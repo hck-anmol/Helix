@@ -2,13 +2,17 @@ import { StateMachine } from "./StateMachine";
 import { Athena } from "../agents/managers/athena/Athena";
 import { Ares } from "../agents/managers/ares/Ares";
 import { Apollo } from "../agents/managers/apollo/Apollo";
+import { Reviewer } from "../agents/managers/reviewer/Reviewer";
 import { WorkerFactory } from "../agents/workers/WorkerFactory";
 import { ProjectRepository } from "../persistence/repositories/ProjectRepository";
 import { MilestoneRepository } from "../persistence/repositories/MilestoneRepository";
 import { IssueRepository } from "../persistence/repositories/IssueRepository";
 import { VerificationRepository } from "../persistence/repositories/VerificationRepository";
 import { TestResultRepository } from "../persistence/repositories/TestResultRepository";
+import { ArtifactChangeRepository } from "../persistence/repositories/ArtifactChangeRepository";
+import { CodeReviewRepository } from "../persistence/repositories/CodeReviewRepository";
 import { Scheduler } from "./Scheduler";
+import { ArtifactSnapshot } from "../utils/ArtifactSnapshot";
 import { AgentContext } from "../agents/base/AgentContext";
 import { config } from "../config/config";
 import crypto from "crypto";
@@ -21,12 +25,15 @@ export class Orchestrator {
         private athena: Athena,
         private ares: Ares,
         private apollo: Apollo,
+        private reviewer: Reviewer,
         private workerFactory: WorkerFactory,
         private projectRepo: ProjectRepository,
         private milestoneRepo: MilestoneRepository,
         private issueRepo: IssueRepository,
         private verificationRepo: VerificationRepository,
-        private testResultRepo: TestResultRepository
+        private testResultRepo: TestResultRepository,
+        private artifactChangeRepo: ArtifactChangeRepository,
+        private codeReviewRepo: CodeReviewRepository
     ) {}
 
     async runProject(projectId: string) {
@@ -128,7 +135,21 @@ export class Orchestrator {
                         context.currentMilestoneId = milestoneId;
 
                         const worker = this.workerFactory.createWorker(scheduledTask.workerRole, enrichedTask);
+                        const snapshotBefore = ArtifactSnapshot.takeSnapshot(context.workspaceRoot);
                         const workerResult = await worker.executeTask(context);
+                        const snapshotAfter = ArtifactSnapshot.takeSnapshot(context.workspaceRoot);
+                        
+                        const artifactChanges = ArtifactSnapshot.compare(snapshotBefore, snapshotAfter);
+                        for (const change of artifactChanges) {
+                            this.artifactChangeRepo.create({
+                                id: crypto.randomUUID(),
+                                projectId,
+                                milestoneId,
+                                issueId: issue.id,
+                                agentRunId: worker.id,
+                                ...change
+                            });
+                        }
                         
                         // Save any test runs that occurred
                         if (workerResult.data?.testsRun) {
@@ -166,7 +187,76 @@ export class Orchestrator {
                             }
                         } else {
                             console.log(`[WORKER:${scheduledTask.workerRole}] Success`);
-                            this.issueRepo.updateStatus(issue.id, "RESOLVED");
+                            
+                            // CODE REVIEW
+                            if (artifactChanges.length > 0 && worker.role !== "tester" && worker.role !== "reviewer") {
+                                console.log(`[REVIEWER] Inspecting ${artifactChanges.length} changes...`);
+                                
+                                const changesContext = artifactChanges.map(c => `- ${c.path} (${c.changeType})`).join("\n");
+                                const reviewPrompt = `Task:\n${enrichedTask}\n\nChanges made by worker:\n${changesContext}\n\nPlease review these artifacts in the workspace.`;
+                                
+                                const reviewResult = await this.reviewer.invoke(reviewPrompt, context);
+                                
+                                if (reviewResult.success && reviewResult.data) {
+                                    const reviewId = crypto.randomUUID();
+                                    this.codeReviewRepo.create({
+                                        id: reviewId,
+                                        projectId,
+                                        milestoneId,
+                                        issueId: issue.id,
+                                        agentRunId: worker.id,
+                                        status: reviewResult.data.status,
+                                        summary: reviewResult.data.summary,
+                                        findings: reviewResult.data.findings,
+                                        filesReviewed: artifactChanges.map(c => c.path)
+                                    });
+
+                                    if (reviewResult.data.status === "FAIL") {
+                                        console.log(`[REVIEWER] FAIL. Required fixes identified.`);
+                                        
+                                        const blockingFindings = reviewResult.data.findings.filter(f => f.severity === "CRITICAL" || f.severity === "HIGH");
+                                        if (blockingFindings.length > 0) {
+                                            // The worker finished their work, but it was rejected.
+                                            this.issueRepo.updateStatus(issue.id, "RESOLVED"); // Original is technically resolved
+
+                                            // Create FIX issue
+                                            const fixId = crypto.randomUUID();
+                                            const fixDesc = blockingFindings.map(f => `- ${f.file || 'General'}: ${f.message}`).join("\n");
+                                            console.log(`[ISSUE] Creating FIX issue from Code Review: ${fixId}`);
+                                            
+                                            this.issueRepo.create({
+                                                id: fixId,
+                                                projectId,
+                                                milestoneId,
+                                                title: `Fix Code Review findings for ${issue.title}`,
+                                                description: `The reviewer rejected the implementation. Fix these issues:\n${fixDesc}`,
+                                                type: "FIX",
+                                                priority: "HIGH",
+                                                status: "READY",
+                                                fixAttempts: 0,
+                                                attemptCount: 0,
+                                                assignedRole: "developer"
+                                            });
+
+                                            // Re-point dependents
+                                            const dependents = this.issueRepo.getDependents(issue.id);
+                                            for (const depId of dependents) {
+                                                this.issueRepo.addDependency(depId, fixId);
+                                            }
+                                        } else {
+                                            this.issueRepo.updateStatus(issue.id, "RESOLVED");
+                                        }
+                                    } else {
+                                        console.log(`[REVIEWER] PASS`);
+                                        this.issueRepo.updateStatus(issue.id, "RESOLVED");
+                                    }
+                                } else {
+                                    console.error(`[REVIEWER] Failed to execute code review`);
+                                    this.issueRepo.updateStatus(issue.id, "RESOLVED"); // Fallback to success if review errors out
+                                }
+                            } else {
+                                this.issueRepo.updateStatus(issue.id, "RESOLVED");
+                            }
                         }
                     }
                 } else if (openOrBlocked.length > 0) {
@@ -257,7 +347,7 @@ export class Orchestrator {
                 }
             }
             
-            const reporter = new (require("./Reporter").Reporter)(this.milestoneRepo, this.issueRepo, this.verificationRepo, this.testResultRepo);
+            const reporter = new (require("./Reporter").Reporter)(this.milestoneRepo, this.issueRepo, this.verificationRepo, this.testResultRepo, this.artifactChangeRepo, this.codeReviewRepo);
             reporter.generateMilestoneReport(projectId, milestoneId);
             
         } catch (error: any) {

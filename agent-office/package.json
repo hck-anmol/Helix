@@ -10,7 +10,9 @@
     "demo-multi-issue": "ts-node src/demo-multi-issue.ts",
     "demo-testing": "ts-node src/demo-testing.ts",
     "demo-testing-failure": "ts-node src/demo-testing-failure.ts",
-    "test": "ts-node tests/run.ts"
+    "test": "ts-node tests/run.ts",
+    "demo-review": "ts-node src/demo-review.ts",
+    "demo-review-failure": "ts-node src/demo-review-failure.ts"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

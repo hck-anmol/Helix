@@ -109,6 +109,36 @@ async function main() {
         return { success: true, data: { type: "SCHEDULE", tasks } };
     };
 
+    let reviewAttempt = 0;
+    reviewer.invoke = async (prompt: string, context?: any) => {
+        reviewAttempt++;
+        if (reviewAttempt === 1) {
+            return {
+                success: true,
+                data: {
+                    status: "FAIL",
+                    summary: "Found issues",
+                    findings: [
+                        {
+                            severity: "CRITICAL",
+                            file: "server.js",
+                            message: "Server is missing error handling",
+                            requiredFix: "Add try-catch block"
+                        }
+                    ]
+                }
+            };
+        }
+        return {
+            success: true,
+            data: {
+                status: "PASS",
+                summary: "LGTM",
+                findings: []
+            }
+        };
+    };
+
     let fixAttempted = false;
 
     // Mock workers to actually write files and run tests
@@ -135,7 +165,7 @@ async function main() {
                     output: "mock output"
                 });
                 
-                if (issue.title.includes("Setup Server")) {
+                if (issue.title.includes("Setup Server") && issue.type !== "FIX") {
                     // Create buggy server.js
                     fs.writeFileSync(path.join(projectDir, "server.js"), "throw new Error('Buggy server');");
                     return { success: true, data: { status: "COMPLETED", message: "Server created" } };
@@ -188,19 +218,15 @@ async function main() {
         } as any;
     };
 
-    // Mock Apollo to read tests
     apollo.invoke = async (prompt) => {
-        const testEvidence = prompt.match(/Test Evidence:\n([\s\S]*)/)?.[1] || "";
-        console.log("[DEMO-APOLLO] Seen Evidence:", testEvidence.trim());
-        const pass = testEvidence.includes("Exit: 0");
         return {
             success: true,
             data: {
                 type: "VERIFICATION",
-                status: pass ? "PASS" : "FAIL",
-                evidence: [testEvidence.trim()],
-                failures: pass ? [] : ["Server crashed with Buggy server"],
-                requiredFixes: pass ? [] : ["Fix server to not throw error"]
+                status: "PASS",
+                evidence: [],
+                failures: [],
+                requiredFixes: []
             }
         };
     };

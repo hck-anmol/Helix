@@ -48,6 +48,21 @@ function renderStatus() {
         console.log(`\nIssues:\nNone`);
     }
 
+    const reviews = db.prepare(`SELECT * FROM code_reviews WHERE milestoneId = ? ORDER BY createdAt ASC`).all(milestone.id) as any[];
+    if (reviews.length > 0) {
+        const lastReview = reviews[reviews.length - 1];
+        console.log(`\nCode Review:\n${lastReview.status}`);
+        
+        try {
+            const findings = JSON.parse(lastReview.findings || "[]");
+            const blocking = findings.filter((f: any) => f.severity === "CRITICAL" || f.severity === "HIGH").length;
+            const suggestion = findings.length - blocking;
+            console.log(`\nFindings:\n${blocking} blocking\n${suggestion} suggestion`);
+        } catch (e) {
+            console.log(`\nFindings:\n0 blocking\n0 suggestion`);
+        }
+    }
+
     const runs = db.prepare(`
         SELECT role, status FROM agent_runs 
         WHERE projectId = ? AND phase = 'EXECUTION' 

@@ -26,6 +26,7 @@ async function main() {
     const athena = new Athena(modelRouter, runRepo);
     const ares = new Ares(modelRouter, runRepo);
     const apollo = new Apollo(modelRouter, runRepo);
+    const reviewer = new (require("./agents/managers/reviewer/Reviewer").Reviewer)(modelRouter, runRepo);
 
     const tools = [
         new ReadFileTool(),
@@ -40,10 +41,12 @@ async function main() {
     const issueRepo = new IssueRepository();
     const verificationRepo = new VerificationRepository();
     const testResultRepo = new TestResultRepository();
+    const artifactChangeRepo = new (require("./persistence/repositories/ArtifactChangeRepository").ArtifactChangeRepository)();
+    const codeReviewRepo = new (require("./persistence/repositories/CodeReviewRepository").CodeReviewRepository)();
 
     const orchestrator = new Orchestrator(
-        athena, ares, apollo, workerFactory,
-        projectRepo, milestoneRepo, issueRepo, verificationRepo, testResultRepo
+        athena, ares, apollo, reviewer, workerFactory,
+        projectRepo, milestoneRepo, issueRepo, verificationRepo, testResultRepo, artifactChangeRepo, codeReviewRepo
     );
 
     const projectId = crypto.randomUUID();

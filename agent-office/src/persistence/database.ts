@@ -110,6 +110,42 @@ db.exec(`
         FOREIGN KEY(issueId) REFERENCES issues(id),
         FOREIGN KEY(workerRunId) REFERENCES agent_runs(id)
     );
+
+    CREATE TABLE IF NOT EXISTS artifact_changes (
+        id TEXT PRIMARY KEY,
+        projectId TEXT,
+        milestoneId TEXT,
+        issueId TEXT,
+        agentRunId TEXT,
+        path TEXT,
+        changeType TEXT,
+        beforeHash TEXT,
+        afterHash TEXT,
+        beforeSize INTEGER,
+        afterSize INTEGER,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(projectId) REFERENCES projects(id),
+        FOREIGN KEY(milestoneId) REFERENCES milestones(id),
+        FOREIGN KEY(issueId) REFERENCES issues(id),
+        FOREIGN KEY(agentRunId) REFERENCES agent_runs(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS code_reviews (
+        id TEXT PRIMARY KEY,
+        projectId TEXT,
+        milestoneId TEXT,
+        issueId TEXT,
+        agentRunId TEXT,
+        status TEXT,
+        summary TEXT,
+        findings TEXT,
+        filesReviewed TEXT,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(projectId) REFERENCES projects(id),
+        FOREIGN KEY(milestoneId) REFERENCES milestones(id),
+        FOREIGN KEY(issueId) REFERENCES issues(id),
+        FOREIGN KEY(agentRunId) REFERENCES agent_runs(id)
+    );
 `);
 
 // Auto-migrate to add sourceVerificationId if it doesn't exist

@@ -5,13 +5,17 @@ import { MilestoneRepository } from "../persistence/repositories/MilestoneReposi
 import { IssueRepository } from "../persistence/repositories/IssueRepository";
 import { VerificationRepository } from "../persistence/repositories/VerificationRepository";
 import { TestResultRepository } from "../persistence/repositories/TestResultRepository";
+import { ArtifactChangeRepository } from "../persistence/repositories/ArtifactChangeRepository";
+import { CodeReviewRepository } from "../persistence/repositories/CodeReviewRepository";
 
 export class Reporter {
     constructor(
         private milestoneRepo: MilestoneRepository,
         private issueRepo: IssueRepository,
         private verificationRepo: VerificationRepository,
-        private testResultRepo?: TestResultRepository
+        private testResultRepo?: TestResultRepository,
+        private artifactChangeRepo?: ArtifactChangeRepository,
+        private codeReviewRepo?: CodeReviewRepository
     ) {}
 
     generateMilestoneReport(projectId: string, milestoneId: string) {
@@ -36,6 +40,34 @@ export class Reporter {
                 report += `Depends on: ${deps.join(", ")}\n`;
             }
             report += "\n";
+        }
+
+        if (this.artifactChangeRepo) {
+            report += `\n## Artifact Changes\n\n`;
+            const changes = this.artifactChangeRepo.listByMilestone(milestoneId);
+            const created = changes.filter(c => c.changeType === "CREATED").map(c => `- ${c.path}`);
+            const modified = changes.filter(c => c.changeType === "MODIFIED").map(c => `- ${c.path}`);
+            const deleted = changes.filter(c => c.changeType === "DELETED").map(c => `- ${c.path}`);
+
+            if (created.length > 0) report += `Created:\n${created.join("\n")}\n\n`;
+            if (modified.length > 0) report += `Modified:\n${modified.join("\n")}\n\n`;
+            if (deleted.length > 0) report += `Deleted:\n${deleted.join("\n")}\n\n`;
+            if (changes.length === 0) report += `*No artifacts changed.*\n\n`;
+        }
+
+        if (this.codeReviewRepo) {
+            report += `\n## Code Review\n\n`;
+            const reviews = this.codeReviewRepo.listByMilestone(milestoneId);
+            for (const review of reviews) {
+                report += `### Status: ${review.status}\n`;
+                report += `Summary: ${review.summary}\n`;
+                report += `Files Reviewed: ${review.filesReviewed.join(", ")}\n`;
+                const blocking = review.findings.filter(f => f.severity === "CRITICAL" || f.severity === "HIGH").length;
+                const suggestion = review.findings.length - blocking;
+                report += `Blocking Findings: ${blocking}\n`;
+                report += `Suggestions: ${suggestion}\n\n`;
+            }
+            if (reviews.length === 0) report += `*No code reviews performed.*\n\n`;
         }
 
         report += `\n## Tests Executed:\n\n`;

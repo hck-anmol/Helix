@@ -109,7 +109,16 @@ async function main() {
         return { success: true, data: { type: "SCHEDULE", tasks } };
     };
 
-    let fixAttempted = false;
+    reviewer.invoke = async (prompt: string, context?: any) => {
+        return {
+            success: true,
+            data: {
+                status: "PASS",
+                summary: "LGTM",
+                findings: []
+            }
+        };
+    };
 
     // Mock workers to actually write files and run tests
     const shellTool = new ShellTool();
@@ -136,8 +145,8 @@ async function main() {
                 });
                 
                 if (issue.title.includes("Setup Server")) {
-                    // Create buggy server.js
-                    fs.writeFileSync(path.join(projectDir, "server.js"), "throw new Error('Buggy server');");
+                    // Create server.js
+                    fs.writeFileSync(path.join(projectDir, "server.js"), "console.log('Server running');");
                     return { success: true, data: { status: "COMPLETED", message: "Server created" } };
                 } else if (issue.title.includes("Run tests")) {
                     // Execute a test command
@@ -148,30 +157,6 @@ async function main() {
                         data: {
                             status: "COMPLETED",
                             message: "Test executed",
-                            testsRun: [{
-                                command: sr.command,
-                                status: sr.exitCode === 0 ? "PASSED" : "FAILED",
-                                exitCode: sr.exitCode,
-                                stdout: sr.stdout,
-                                stderr: sr.stderr,
-                                durationMs: sr.durationMs
-                            }]
-                        }
-                    };
-                } else if (issue.type === "FIX") {
-                    console.log("[DEMO-WORKER] Fixing bug...");
-                    fs.writeFileSync(path.join(projectDir, "server.js"), "console.log('Server running properly');");
-                    
-                    console.log("[DEMO-WORKER] Running tests to verify fix...");
-                    const mockContext = { projectId: context.projectId, workspaceRoot: projectDir, currentIssueId: issueId, currentMilestoneId: context.currentMilestoneId, projectSpec: "" };
-                    const sr = await shellTool.execute({ command: "node server.js" }, mockContext);
-
-                    fixAttempted = true;
-                    return {
-                        success: true,
-                        data: {
-                            status: "COMPLETED",
-                            message: "Bug fixed",
                             testsRun: [{
                                 command: sr.command,
                                 status: sr.exitCode === 0 ? "PASSED" : "FAILED",
@@ -199,8 +184,8 @@ async function main() {
                 type: "VERIFICATION",
                 status: pass ? "PASS" : "FAIL",
                 evidence: [testEvidence.trim()],
-                failures: pass ? [] : ["Server crashed with Buggy server"],
-                requiredFixes: pass ? [] : ["Fix server to not throw error"]
+                failures: pass ? [] : ["Test failed"],
+                requiredFixes: pass ? [] : ["Fix server"]
             }
         };
     };

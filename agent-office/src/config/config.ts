@@ -13,6 +13,7 @@ export const config = {
         apollo: "qwen3:8b",
         developer: "qwen2.5-coder:7b",
         tester: "qwen2.5-coder:7b",
-        researcher: "qwen3:4b"
+        researcher: "qwen3:4b",
+        reviewer: "qwen3:8b"
     }
 };
