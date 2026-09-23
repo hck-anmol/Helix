@@ -7,6 +7,7 @@ import { ProjectRepository } from "../persistence/repositories/ProjectRepository
 import { MilestoneRepository } from "../persistence/repositories/MilestoneRepository";
 import { IssueRepository } from "../persistence/repositories/IssueRepository";
 import { VerificationRepository } from "../persistence/repositories/VerificationRepository";
+import { TestResultRepository } from "../persistence/repositories/TestResultRepository";
 import { Scheduler } from "./Scheduler";
 import { AgentContext } from "../agents/base/AgentContext";
 import { config } from "../config/config";
@@ -24,7 +25,8 @@ export class Orchestrator {
         private projectRepo: ProjectRepository,
         private milestoneRepo: MilestoneRepository,
         private issueRepo: IssueRepository,
-        private verificationRepo: VerificationRepository
+        private verificationRepo: VerificationRepository,
+        private testResultRepo: TestResultRepository
     ) {}
 
     async runProject(projectId: string) {
@@ -128,6 +130,25 @@ export class Orchestrator {
                         const worker = this.workerFactory.createWorker(scheduledTask.workerRole, enrichedTask);
                         const workerResult = await worker.executeTask(context);
                         
+                        // Save any test runs that occurred
+                        if (workerResult.data?.testsRun) {
+                            for (const tr of workerResult.data.testsRun) {
+                                this.testResultRepo.create({
+                                    id: crypto.randomUUID(),
+                                    projectId,
+                                    milestoneId,
+                                    issueId: issue.id,
+                                    workerRunId: worker.id,
+                                    command: tr.command,
+                                    status: tr.status as any,
+                                    exitCode: tr.exitCode,
+                                    stdout: tr.stdout || "",
+                                    stderr: tr.stderr || "",
+                                    durationMs: tr.durationMs || 0
+                                });
+                            }
+                        }
+
                         this.issueRepo.incrementAttemptCount(issue.id);
 
                         if (!workerResult.success || workerResult.data?.status === "FAILED") {
@@ -165,7 +186,9 @@ export class Orchestrator {
                     console.log(`[ORCHESTRATOR] Phase: VERIFICATION`);
                     console.log(`[APOLLO] Verifying milestone...`);
                     
-                    const apolloContext = `\nIssues:\n${allIssues.map(i => `- ${i.title} (${i.status})`).join("\n")}`;
+                    const testRuns = this.testResultRepo.listByMilestone(milestoneId);
+                    const testsContext = testRuns.map(tr => `[Test] ${tr.command} | Exit: ${tr.exitCode} | Status: ${tr.status}\nSTDOUT: ${tr.stdout}\nSTDERR: ${tr.stderr}`).join("\n\n");
+                    const apolloContext = `\nIssues:\n${allIssues.map(i => `- ${i.title} (${i.status})`).join("\n")}\n\nTest Evidence:\n${testsContext}`;
                     const apolloResult = await this.apollo.invoke(`Verify if the milestone was completed. Milestone: ${JSON.stringify(context.currentMilestone)}${apolloContext}`, context);
                     
                     if (!apolloResult.success || !apolloResult.data) throw new Error("Apollo failed to verify");
@@ -174,8 +197,9 @@ export class Orchestrator {
                     const milestoneRecord = this.milestoneRepo.getPendingByProject(projectId) || this.milestoneRepo.get(milestoneId)!;
                     const attemptNum = (milestoneRecord.verificationAttempts || 0) + 1;
 
+                    const verificationRunId = crypto.randomUUID();
                     this.verificationRepo.create({
-                        id: crypto.randomUUID(),
+                        id: verificationRunId,
                         milestoneId,
                         attemptNumber: attemptNum,
                         status: verification.status,
@@ -221,7 +245,8 @@ export class Orchestrator {
                                         priority: "HIGH",
                                         status: "READY", // Make it ready immediately
                                         fixAttempts: 0,
-                                        attemptCount: 0
+                                        attemptCount: 0,
+                                        sourceVerificationId: verificationRunId
                                     });
                                 }
                             }
@@ -232,7 +257,7 @@ export class Orchestrator {
                 }
             }
             
-            const reporter = new (require("./Reporter").Reporter)(this.milestoneRepo, this.issueRepo, this.verificationRepo);
+            const reporter = new (require("./Reporter").Reporter)(this.milestoneRepo, this.issueRepo, this.verificationRepo, this.testResultRepo);
             reporter.generateMilestoneReport(projectId, milestoneId);
             
         } catch (error: any) {

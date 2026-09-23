@@ -6,5 +6,5 @@ export interface ToolContext {
 export interface Tool {
     name: string;
     description: string;
-    execute(args: any, context: ToolContext): Promise<string>;
+    execute(args: any, context: ToolContext): Promise<any>;
 }

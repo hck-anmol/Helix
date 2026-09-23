@@ -45,28 +45,32 @@ export async function run() {
         });
     }
 
-    createIssue("LOW_ISSUE", "LOW");
-    createIssue("HIGH_ISSUE", "HIGH");
-    createIssue("CRITICAL_ISSUE", "CRITICAL");
+    const LOW = "LOW_ISSUE-" + projectId;
+    const HIGH = "HIGH_ISSUE-" + projectId;
+    const CRITICAL = "CRITICAL_ISSUE-" + projectId;
+
+    createIssue(LOW, "LOW");
+    createIssue(HIGH, "HIGH");
+    createIssue(CRITICAL, "CRITICAL");
 
     // All are PENDING, no dependencies.
     const ready1 = scheduler.getReadyIssues(milestoneId);
     if (ready1.length !== 3) throw new Error("Expected 3 ready issues");
-    if (ready1[0].id !== "CRITICAL_ISSUE") throw new Error("CRITICAL should be first");
-    if (ready1[1].id !== "HIGH_ISSUE") throw new Error("HIGH should be second");
-    if (ready1[2].id !== "LOW_ISSUE") throw new Error("LOW should be third");
+    if (ready1[0].id !== CRITICAL) throw new Error("CRITICAL should be first");
+    if (ready1[1].id !== HIGH) throw new Error("HIGH should be second");
+    if (ready1[2].id !== LOW) throw new Error("LOW should be third");
     
     console.log("Priority scheduling passed");
 
     // Add a dependency: CRITICAL depends on LOW
-    issueRepo.addDependency("CRITICAL_ISSUE", "LOW_ISSUE");
+    issueRepo.addDependency(CRITICAL, LOW);
     
     const ready2 = scheduler.getReadyIssues(milestoneId);
     if (ready2.length !== 2) throw new Error("Expected 2 ready issues (CRITICAL should be blocked)");
-    if (ready2[0].id !== "HIGH_ISSUE") throw new Error("HIGH should be first");
-    if (ready2[1].id !== "LOW_ISSUE") throw new Error("LOW should be second");
+    if (ready2[0].id !== HIGH) throw new Error("HIGH should be first");
+    if (ready2[1].id !== LOW) throw new Error("LOW should be second");
 
-    const critical = issueRepo.get("CRITICAL_ISSUE");
+    const critical = issueRepo.get(CRITICAL);
     if (critical?.status !== "BLOCKED") throw new Error("CRITICAL_ISSUE should be BLOCKED");
 
     console.log("Dependency overrides priority passed");

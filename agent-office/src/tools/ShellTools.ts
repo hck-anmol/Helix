@@ -1,20 +1,34 @@
 import { Tool, ToolContext } from "./Tool";
 import { exec } from "child_process";
-import util from "util";
 import path from "path";
 
-const execAsync = util.promisify(exec);
+export interface ShellResult {
+    command: string;
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+    durationMs: number;
+}
 
 export class ShellTool implements Tool {
     name = "execute_shell";
     description = "Executes a shell command. Args: { \"command\": \"...\" }";
 
-    async execute(args: { command: string }, context: ToolContext): Promise<string> {
-        try {
-            const { stdout, stderr } = await execAsync(args.command, { cwd: context.workspaceRoot });
-            return `STDOUT:\n${stdout}\nSTDERR:\n${stderr}`;
-        } catch (error: any) {
-            return `ERROR: ${error.message}\nSTDOUT:\n${error.stdout}\nSTDERR:\n${error.stderr}`;
-        }
+    async execute(args: { command: string }, context: ToolContext): Promise<ShellResult> {
+        return new Promise((resolve) => {
+            const startTime = Date.now();
+            
+            // 15 seconds timeout
+            const child = exec(args.command, { cwd: context.workspaceRoot, timeout: 15000 }, (error, stdout, stderr) => {
+                const durationMs = Date.now() - startTime;
+                resolve({
+                    command: args.command,
+                    stdout: stdout || "",
+                    stderr: stderr || "",
+                    exitCode: error?.code ?? 0,
+                    durationMs
+                });
+            });
+        });
     }
 }

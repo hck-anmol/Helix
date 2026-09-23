@@ -48,6 +48,7 @@ db.exec(`
         assignedRole TEXT,
         fixAttempts INTEGER DEFAULT 0,
         attemptCount INTEGER DEFAULT 0,
+        sourceVerificationId TEXT,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(projectId) REFERENCES projects(id),
@@ -88,7 +89,32 @@ db.exec(`
         output TEXT,
         startedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         completedAt DATETIME,
-        error TEXT,
-        FOREIGN KEY(projectId) REFERENCES projects(id)
+        error TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS test_runs (
+        id TEXT PRIMARY KEY,
+        projectId TEXT,
+        milestoneId TEXT,
+        issueId TEXT,
+        workerRunId TEXT,
+        command TEXT,
+        status TEXT,
+        exitCode INTEGER,
+        stdout TEXT,
+        stderr TEXT,
+        durationMs INTEGER,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(projectId) REFERENCES projects(id),
+        FOREIGN KEY(milestoneId) REFERENCES milestones(id),
+        FOREIGN KEY(issueId) REFERENCES issues(id),
+        FOREIGN KEY(workerRunId) REFERENCES agent_runs(id)
     );
 `);
+
+// Auto-migrate to add sourceVerificationId if it doesn't exist
+try {
+    db.exec(`ALTER TABLE issues ADD COLUMN sourceVerificationId TEXT`);
+} catch (e) {
+    // Ignore if column already exists
+}

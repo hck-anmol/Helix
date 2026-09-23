@@ -43,21 +43,25 @@ export async function run() {
         });
     }
 
-    createIssue("A");
-    createIssue("B");
-    createIssue("C");
+    const A = "A-" + projectId;
+    const B = "B-" + projectId;
+    const C = "C-" + projectId;
+
+    createIssue(A);
+    createIssue(B);
+    createIssue(C);
 
     // A -> B -> C is valid
-    issueRepo.addDependency("B", "A"); // B depends on A
-    issueRepo.addDependency("C", "B"); // C depends on B
+    issueRepo.addDependency(B, A); // B depends on A
+    issueRepo.addDependency(C, B); // C depends on B
 
-    const depsB = issueRepo.getDependencies("B");
-    if (!depsB.includes("A")) throw new Error("Dependency A not found for B");
+    const depsB = issueRepo.getDependencies(B);
+    if (!depsB.includes(A)) throw new Error("Dependency A not found for B");
 
     // Cycle detection: A -> C should fail because C depends on B which depends on A
     let caught = false;
     try {
-        issueRepo.addDependency("A", "C"); // A depends on C
+        issueRepo.addDependency(A, C); // A depends on C
     } catch (e) {
         caught = true;
     }
@@ -71,9 +75,9 @@ export async function run() {
     // State evaluation test
     issueRepo.evaluateIssueStates(milestoneId);
     
-    let a = issueRepo.get("A");
-    let b = issueRepo.get("B");
-    let c = issueRepo.get("C");
+    let a = issueRepo.get(A);
+    let b = issueRepo.get(B);
+    let c = issueRepo.get(C);
     
     if (a?.status !== "READY") throw new Error("A should be READY");
     if (b?.status !== "BLOCKED") throw new Error("B should be BLOCKED");
@@ -81,12 +85,12 @@ export async function run() {
 
     console.log("State evaluation (initial) passed");
 
-    issueRepo.updateStatus("A", "RESOLVED");
+    issueRepo.updateStatus(A, "RESOLVED");
     issueRepo.evaluateIssueStates(milestoneId);
 
-    a = issueRepo.get("A");
-    b = issueRepo.get("B");
-    c = issueRepo.get("C");
+    a = issueRepo.get(A);
+    b = issueRepo.get(B);
+    c = issueRepo.get(C);
 
     if (a?.status !== "RESOLVED") throw new Error("A should be RESOLVED");
     if (b?.status !== "READY") throw new Error("B should be READY");

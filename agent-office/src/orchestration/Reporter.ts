@@ -4,12 +4,14 @@ import { config } from "../config/config";
 import { MilestoneRepository } from "../persistence/repositories/MilestoneRepository";
 import { IssueRepository } from "../persistence/repositories/IssueRepository";
 import { VerificationRepository } from "../persistence/repositories/VerificationRepository";
+import { TestResultRepository } from "../persistence/repositories/TestResultRepository";
 
 export class Reporter {
     constructor(
         private milestoneRepo: MilestoneRepository,
         private issueRepo: IssueRepository,
-        private verificationRepo: VerificationRepository
+        private verificationRepo: VerificationRepository,
+        private testResultRepo?: TestResultRepository
     ) {}
 
     generateMilestoneReport(projectId: string, milestoneId: string) {
@@ -34,6 +36,20 @@ export class Reporter {
                 report += `Depends on: ${deps.join(", ")}\n`;
             }
             report += "\n";
+        }
+
+        report += `\n## Tests Executed:\n\n`;
+        if (this.testResultRepo) {
+            const testRuns = this.testResultRepo.listByMilestone(milestoneId);
+            for (const tr of testRuns) {
+                report += `### Command: \`${tr.command}\`\n`;
+                report += `Status: ${tr.status}\n`;
+                report += `Exit Code: ${tr.exitCode}\n`;
+                if (tr.stdout) report += `\n**STDOUT:**\n\`\`\`\n${tr.stdout.substring(0, 500)}${tr.stdout.length > 500 ? "..." : ""}\n\`\`\`\n`;
+                if (tr.stderr) report += `\n**STDERR:**\n\`\`\`\n${tr.stderr.substring(0, 500)}${tr.stderr.length > 500 ? "..." : ""}\n\`\`\`\n`;
+                report += "\n";
+            }
+            if (testRuns.length === 0) report += `*No tests executed.*\n\n`;
         }
 
         report += `\n## Verification attempts: ${verifications.length}\n\n`;

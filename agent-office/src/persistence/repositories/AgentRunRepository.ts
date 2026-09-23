@@ -25,4 +25,14 @@ export class AgentRunRepository {
         `);
         stmt.run({ ...run, error: run.error || null, task: run.task || "" });
     }
+
+    get(id: string): AgentRunRecord | undefined {
+        const stmt = db.prepare(`SELECT * FROM agent_runs WHERE id = ?`);
+        return stmt.get(id) as AgentRunRecord | undefined;
+    }
+
+    updateOutput(runId: string, output: string) {
+        const stmt = db.prepare(`UPDATE agent_runs SET output = ? WHERE id = ?`);
+        stmt.run(output, runId);
+    }
 }

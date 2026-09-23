@@ -4,10 +4,10 @@ import { Issue, IssueStatus } from "../../projects/Issue";
 export class IssueRepository {
     create(issue: Issue) {
         const stmt = db.prepare(`
-            INSERT INTO issues (id, projectId, milestoneId, title, description, type, priority, status, assignedRole, fixAttempts, attemptCount)
-            VALUES (@id, @projectId, @milestoneId, @title, @description, @type, @priority, @status, @assignedRole, @fixAttempts, @attemptCount)
+            INSERT INTO issues (id, projectId, milestoneId, title, description, type, priority, status, assignedRole, fixAttempts, attemptCount, sourceVerificationId)
+            VALUES (@id, @projectId, @milestoneId, @title, @description, @type, @priority, @status, @assignedRole, @fixAttempts, @attemptCount, @sourceVerificationId)
         `);
-        stmt.run({ ...issue, assignedRole: issue.assignedRole || null, attemptCount: issue.attemptCount || 0 });
+        stmt.run({ ...issue, assignedRole: issue.assignedRole || null, attemptCount: issue.attemptCount || 0, sourceVerificationId: issue.sourceVerificationId || null });
     }
 
     get(id: string): Issue | undefined {

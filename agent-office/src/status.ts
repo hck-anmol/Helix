@@ -65,6 +65,17 @@ function renderStatus() {
         }
     }
 
+    const testRuns = db.prepare(`SELECT * FROM test_runs WHERE milestoneId = ? ORDER BY createdAt ASC`).all(milestone.id) as any[];
+    if (testRuns.length > 0) {
+        console.log(`\nTests:`);
+        for (const tr of testRuns) {
+            console.log(tr.command);
+            console.log(`Status: ${tr.status}`);
+            console.log(`Exit Code: ${tr.exitCode}`);
+            console.log();
+        }
+    }
+
     const verifications = db.prepare(`SELECT * FROM verification_runs WHERE milestoneId = ? ORDER BY attemptNumber ASC`).all(milestone.id) as any[];
     console.log(`\nVerification:`);
     if (verifications.length > 0) {

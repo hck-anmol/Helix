@@ -8,6 +8,8 @@
     "demo-failure": "ts-node src/demo-failure.ts",
     "status": "ts-node src/status.ts",
     "demo-multi-issue": "ts-node src/demo-multi-issue.ts",
+    "demo-testing": "ts-node src/demo-testing.ts",
+    "demo-testing-failure": "ts-node src/demo-testing-failure.ts",
     "test": "ts-node tests/run.ts"
   },
   "dependencies": {
