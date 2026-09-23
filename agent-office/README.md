@@ -1,16 +1,63 @@
-# Agent Office - 30% Foundation
+# Agent Office
 
-A foundational implementation of a multi-agent software development system inspired by "TheBotCompany: Self-Organizing Multi-agent Systems for Continuous Software Development".
+A multi-agent software development system inspired by "TheBotCompany: Self-Organizing Multi-agent Systems for Continuous Software Development".
 
-## Architecture
+## Architecture (Phase 2 - Failure/Recovery Loop)
 
-This project implements a local, Ollama-based architecture:
+```text
+                    ┌──────────────┐
+                    │     USER     │
+                    └──────┬───────┘
+                           ↓
+                    ┌──────────────┐
+                    │    ATHENA    │
+                    │   STRATEGY   │
+                    └──────┬───────┘
+                           ↓
+                       MILESTONE
+                           ↓
+                    ┌──────────────┐
+                    │     ARES     │
+                    │  EXECUTION   │
+                    └──────┬───────┘
+                           ↓
+                       WORKERS
+                           ↓
+                    ┌──────────────┐
+                    │    APOLLO    │
+                    │ VERIFICATION │
+                    └──────┬───────┘
+                           ↓
+                    ┌──────────────┐
+                    │ PASS / FAIL  │
+                    └──────┬───────┘
+                           │
+                 ┌─────────┴─────────┐
+                 ↓                   ↓
+               PASS                FAIL
+                 ↓                   ↓
+        NEXT MILESTONE        CREATE FIX TASKS
+                                     ↓
+                                   ARES
+                                     ↓
+                                  WORKERS
+                                     ↓
+                                   APOLLO
+```
 
-- **Managers**: `Athena` (Strategy), `Ares` (Execution), `Apollo` (Verification).
-- **Workers**: `developer`, `tester`, `researcher` dynamically created with specific tools.
-- **Orchestration**: `Orchestrator` manages a strict lifecycle (`STRATEGY` -> `EXECUTION` -> `VERIFICATION`) driven by a State Machine.
-- **Persistence**: SQLite (using `better-sqlite3`) tracks projects, milestones, and agent runs.
-- **LLM**: All calls are routed through `ModelRouter` to an `OllamaProvider`. 
+## Features
+- **Strict Role Boundaries**: Managers (Athena, Ares, Apollo) do not call each other. Coordination is handled entirely by the Orchestrator's State Machine.
+- **Autonomous Tool Execution**: Workers have sandboxed shell and file capabilities.
+- **SQLite Persistence**: All state, issues, and verification attempts are durably stored in `agent-office.db`.
+- **Failure Recovery Loop**: If Apollo returns `FAIL`, the Orchestrator generates FIX issues and loops back to Ares to schedule developers with strict failure context.
+- **Retry Limits**: Configurable max verification attempts (`MAX_VERIFICATION_ATTEMPTS = 3`) and issue fix attempts (`MAX_FIX_ATTEMPTS_PER_ISSUE = 2`).
+
+## Commands
+
+- `npm run demo`: Runs the standard successful execution demo.
+- `npm run demo-failure`: Runs the deterministic failure and recovery loop demo.
+- `npm run status`: Prints a CLI dashboard of the current project status, issues, worker states, and verification attempts.
+- `npm test`: Runs repository and state machine tests.
 
 ## Prerequisites
 
@@ -23,23 +70,13 @@ This project implements a local, Ollama-based architecture:
    ollama pull qwen3:4b
    ```
 
-## Setup and Execution
+## Setup
 
-1. Navigate to the project directory:
-   ```powershell
-   cd D:\Helix\agent-office
-   ```
-2. Install dependencies:
+1. Install dependencies:
    ```powershell
    npm install
    ```
-3. Compile TypeScript:
+2. Compile TypeScript:
    ```powershell
    npx tsc
    ```
-4. Run the Demo:
-   ```powershell
-   npm run demo
-   ```
-
-The demo simulates the creation of a simple REST API with a `/health` endpoint, passing it through the full Strategy -> Execution -> Verification lifecycle.

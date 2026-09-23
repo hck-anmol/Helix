@@ -4,6 +4,8 @@ import { ModelRouter } from "./llm/ModelRouter";
 import { ProjectRepository } from "./persistence/repositories/ProjectRepository";
 import { MilestoneRepository } from "./persistence/repositories/MilestoneRepository";
 import { AgentRunRepository } from "./persistence/repositories/AgentRunRepository";
+import { IssueRepository } from "./persistence/repositories/IssueRepository";
+import { VerificationRepository } from "./persistence/repositories/VerificationRepository";
 import { Athena } from "./agents/managers/athena/Athena";
 import { Ares } from "./agents/managers/ares/Ares";
 import { Apollo } from "./agents/managers/apollo/Apollo";
@@ -22,6 +24,8 @@ async function main() {
     const projectRepo = new ProjectRepository();
     const milestoneRepo = new MilestoneRepository();
     const runRepo = new AgentRunRepository();
+    const issueRepo = new IssueRepository();
+    const verificationRepo = new VerificationRepository();
 
     const athena = new Athena(router, runRepo);
     const ares = new Ares(router, runRepo);
@@ -41,7 +45,9 @@ async function main() {
         apollo,
         workerFactory,
         projectRepo,
-        milestoneRepo
+        milestoneRepo,
+        issueRepo,
+        verificationRepo
     );
 
     const projectId = crypto.randomUUID();

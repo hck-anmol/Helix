@@ -39,6 +39,7 @@ export abstract class BaseAgent<T = any> {
                 agentId: this.id,
                 role: this.role,
                 model,
+                task: "",
                 phase: "EXECUTION",
                 status: "SUCCESS",
                 output: JSON.stringify(parsed)
@@ -54,6 +55,7 @@ export abstract class BaseAgent<T = any> {
                 agentId: this.id,
                 role: this.role,
                 model,
+                task: "",
                 phase: "EXECUTION",
                 status: "FAILED",
                 output: error.message

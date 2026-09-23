@@ -7,6 +7,7 @@ export interface MilestoneRecord {
     description: string;
     status: string;
     budget: number;
+    verificationAttempts: number;
 }
 
 export class MilestoneRepository {
@@ -21,6 +22,16 @@ export class MilestoneRepository {
     updateStatus(id: string, status: string) {
         const stmt = db.prepare(`UPDATE milestones SET status = ? WHERE id = ?`);
         stmt.run(status, id);
+    }
+
+    incrementVerificationAttempts(id: string) {
+        const stmt = db.prepare(`UPDATE milestones SET verificationAttempts = verificationAttempts + 1 WHERE id = ?`);
+        stmt.run(id);
+    }
+
+    get(id: string): MilestoneRecord | undefined {
+        const stmt = db.prepare(`SELECT * FROM milestones WHERE id = ?`);
+        return stmt.get(id) as MilestoneRecord | undefined;
     }
 
     getPendingByProject(projectId: string): MilestoneRecord | undefined {

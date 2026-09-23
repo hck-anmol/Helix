@@ -4,7 +4,7 @@ Output strictly JSON matching this schema:
 {
   "type": "VERIFICATION",
   "status": "PASS", // or "FAIL"
-  "evidence": ["evidence that criteria is met"],
-  "failures": ["list of failures if status is FAIL"],
-  "requiredFixes": ["list of required fixes if status is FAIL"]
+  "evidence": ["evidence that criteria is met or failed"],
+  "failures": ["list of failures if status is FAIL. empty if PASS"],
+  "requiredFixes": ["list of required fixes if status is FAIL. empty if PASS"]
 }`;

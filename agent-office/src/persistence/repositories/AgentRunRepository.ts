@@ -6,17 +6,21 @@ export interface AgentRunRecord {
     agentId: string;
     role: string;
     model: string;
+    task: string;
     phase: string;
     status: string;
     output: string;
+    startedAt?: string;
+    completedAt?: string;
+    error?: string;
 }
 
 export class AgentRunRepository {
     create(run: AgentRunRecord) {
         const stmt = db.prepare(`
-            INSERT INTO agent_runs (id, projectId, agentId, role, model, phase, status, output)
-            VALUES (@id, @projectId, @agentId, @role, @model, @phase, @status, @output)
+            INSERT INTO agent_runs (id, projectId, agentId, role, model, task, phase, status, output, completedAt, error)
+            VALUES (@id, @projectId, @agentId, @role, @model, @task, @phase, @status, @output, CURRENT_TIMESTAMP, @error)
         `);
-        stmt.run(run);
+        stmt.run({ ...run, error: run.error || null, task: run.task || "" });
     }
 }

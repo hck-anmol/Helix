@@ -1,9 +1,9 @@
-export type Phase = "IDLE" | "STRATEGY" | "EXECUTION" | "VERIFICATION" | "COMPLETED" | "FAILED";
+import { MilestoneStatus } from "../projects/Milestone";
 
 export class StateMachine {
-    private currentPhase: Phase = "IDLE";
+    private currentPhase: MilestoneStatus = "PLANNED";
 
-    constructor(initialPhase: Phase = "IDLE") {
+    constructor(initialPhase: MilestoneStatus = "PLANNED") {
         this.currentPhase = initialPhase;
     }
 
@@ -11,14 +11,15 @@ export class StateMachine {
         return this.currentPhase;
     }
 
-    transition(nextPhase: Phase) {
-        const allowed: Record<Phase, Phase[]> = {
-            IDLE: ["STRATEGY"],
-            STRATEGY: ["EXECUTION", "FAILED"],
-            EXECUTION: ["VERIFICATION", "FAILED"],
-            VERIFICATION: ["STRATEGY", "COMPLETED", "EXECUTION", "FAILED"], // Execution for retry
+    transition(nextPhase: MilestoneStatus) {
+        const allowed: Record<MilestoneStatus, MilestoneStatus[]> = {
+            PLANNED: ["ACTIVE"],
+            ACTIVE: ["EXECUTING"],
+            EXECUTING: ["VERIFYING"],
+            VERIFYING: ["COMPLETED", "FAILED"],
+            FAILED: ["EXECUTING"],
             COMPLETED: [],
-            FAILED: ["STRATEGY", "EXECUTION"] // allow manual restart
+            BLOCKED: ["EXECUTING", "PLANNED"]
         };
 
         if (!allowed[this.currentPhase].includes(nextPhase)) {

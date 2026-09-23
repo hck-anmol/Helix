@@ -42,12 +42,12 @@ export class OllamaProvider implements ModelProvider {
             console.warn(`[OllamaProvider] Failed to reach Ollama at ${this.baseUrl}. Using mock response for demo.`);
             // Mock responses for the demo if Ollama is offline
             let mockContent = "";
-            if (modelId === "qwen3:8b" && request.systemPrompt.includes("Athena")) {
+            if (modelId === "qwen3:8b" && request.systemPrompt.includes("You are Athena")) {
                 mockContent = JSON.stringify({ type: "MILESTONE", title: "API Setup", description: "Setup REST API with health check", acceptanceCriteria: ["Returns 200 on /health"], budget: 3 });
-            } else if (modelId === "qwen3:8b" && request.systemPrompt.includes("Ares")) {
+            } else if (modelId === "qwen3:8b" && request.systemPrompt.includes("You are Ares")) {
                 mockContent = JSON.stringify({ type: "SCHEDULE", workers: [{ role: "developer", task: "Write index.js" }, { role: "tester", task: "Write test.js" }] });
-            } else if (modelId === "qwen3:8b" && request.systemPrompt.includes("Apollo")) {
-                mockContent = JSON.stringify({ type: "VERIFICATION", status: "PASS", evidence: ["Tests passed"] });
+            } else if (modelId === "qwen3:8b" && request.systemPrompt.includes("You are Apollo")) {
+                mockContent = JSON.stringify({ type: "VERIFICATION", status: "PASS", evidence: ["Tests passed"], failures: [], requiredFixes: [] });
             } else if (modelId === "qwen2.5-coder:7b" && request.systemPrompt.includes("developer")) {
                 mockContent = JSON.stringify({ status: "COMPLETED", message: "Code written", toolCalls: [{ tool: "write_file", args: { path: "index.js", content: "console.log('API Server running');" } }] });
             } else if (modelId === "qwen2.5-coder:7b" && request.systemPrompt.includes("tester")) {

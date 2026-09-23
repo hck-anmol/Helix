@@ -32,7 +32,37 @@ db.exec(`
         description TEXT,
         status TEXT,
         budget INTEGER,
+        verificationAttempts INTEGER DEFAULT 0,
         FOREIGN KEY(projectId) REFERENCES projects(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS issues (
+        id TEXT PRIMARY KEY,
+        projectId TEXT,
+        milestoneId TEXT,
+        title TEXT,
+        description TEXT,
+        type TEXT,
+        priority TEXT,
+        status TEXT,
+        assignedRole TEXT,
+        fixAttempts INTEGER DEFAULT 0,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(projectId) REFERENCES projects(id),
+        FOREIGN KEY(milestoneId) REFERENCES milestones(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS verification_runs (
+        id TEXT PRIMARY KEY,
+        milestoneId TEXT,
+        attemptNumber INTEGER,
+        status TEXT,
+        evidence TEXT,
+        failures TEXT,
+        requiredFixes TEXT,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(milestoneId) REFERENCES milestones(id)
     );
 
     CREATE TABLE IF NOT EXISTS agent_runs (
@@ -41,10 +71,13 @@ db.exec(`
         agentId TEXT,
         role TEXT,
         model TEXT,
+        task TEXT,
         phase TEXT,
         status TEXT,
         output TEXT,
-        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        startedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        completedAt DATETIME,
+        error TEXT,
         FOREIGN KEY(projectId) REFERENCES projects(id)
     );
 `);
