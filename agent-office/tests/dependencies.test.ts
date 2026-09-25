@@ -39,7 +39,8 @@ export async function run() {
             type: "TASK",
             priority: "MEDIUM",
             status: "PENDING",
-            fixAttempts: 0
+            fixAttempts: 0,
+            attemptCount: 0
         });
     }
 

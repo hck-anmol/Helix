@@ -6,22 +6,27 @@ import { MilestoneRepository } from "./persistence/repositories/MilestoneReposit
 import { AgentRunRepository } from "./persistence/repositories/AgentRunRepository";
 import { IssueRepository } from "./persistence/repositories/IssueRepository";
 import { VerificationRepository } from "./persistence/repositories/VerificationRepository";
-import { Athena } from "./agents/managers/athena/Athena";
-import { Ares } from "./agents/managers/ares/Ares";
-import { Apollo } from "./agents/managers/apollo/Apollo";
-import { WorkerFactory } from "./agents/workers/WorkerFactory";
-import { Reviewer } from "./agents/managers/reviewer/Reviewer";
-import { CheckpointRepository } from "./persistence/repositories/CheckpointRepository";
 import { TestResultRepository } from "./persistence/repositories/TestResultRepository";
 import { ArtifactChangeRepository } from "./persistence/repositories/ArtifactChangeRepository";
 import { CodeReviewRepository } from "./persistence/repositories/CodeReviewRepository";
+import { CheckpointRepository } from "./persistence/repositories/CheckpointRepository";
+import { Athena } from "./agents/managers/athena/Athena";
+import { Ares } from "./agents/managers/ares/Ares";
+import { Apollo } from "./agents/managers/apollo/Apollo";
+import { Reviewer } from "./agents/managers/reviewer/Reviewer";
+import { WorkerFactory } from "./agents/workers/WorkerFactory";
 import { Orchestrator } from "./orchestration/Orchestrator";
 import { ReadFileTool, WriteFileTool, ListFilesTool } from "./tools/FileTools";
 import { ShellTool } from "./tools/ShellTools";
-import crypto from "crypto";
+
+const projectId = process.argv[2];
+if (!projectId) {
+    console.error("Usage: npm run resume -- <project-id>");
+    process.exit(1);
+}
 
 async function main() {
-    console.log("Initializing Agent Office - Phase 1...");
+    console.log(`Initializing Resume Sequence for Project: ${projectId}`);
 
     const provider = new OllamaProvider(config.ollamaBaseUrl);
     const router = new ModelRouter(provider);
@@ -31,10 +36,15 @@ async function main() {
     const runRepo = new AgentRunRepository();
     const issueRepo = new IssueRepository();
     const verificationRepo = new VerificationRepository();
+    const testResultRepo = new TestResultRepository();
+    const artifactChangeRepo = new ArtifactChangeRepository();
+    const codeReviewRepo = new CodeReviewRepository();
+    const checkpointRepo = new CheckpointRepository();
 
     const athena = new Athena(router, runRepo);
     const ares = new Ares(router, runRepo);
     const apollo = new Apollo(router, runRepo);
+    const reviewer = new Reviewer(router, runRepo);
 
     const tools = [
         new ReadFileTool(),
@@ -44,33 +54,24 @@ async function main() {
     ];
     const workerFactory = new WorkerFactory(router, runRepo, tools);
 
-    
-    const testResultRepo = new TestResultRepository();
-    const artifactChangeRepo = new ArtifactChangeRepository();
-    const codeReviewRepo = new CodeReviewRepository();
-    const checkpointRepo = new CheckpointRepository();
-    const reviewer = new Reviewer(router, runRepo);
-    const orchestrator = new Orchestrator(athena, ares, apollo, reviewer, workerFactory, projectRepo, milestoneRepo, issueRepo, verificationRepo, testResultRepo, artifactChangeRepo, codeReviewRepo, checkpointRepo, runRepo);
-        
+    const orchestrator = new Orchestrator(
+        athena,
+        ares,
+        apollo,
+        reviewer,
+        workerFactory,
+        projectRepo,
+        milestoneRepo,
+        issueRepo,
+        verificationRepo,
+        testResultRepo,
+        artifactChangeRepo,
+        codeReviewRepo,
+        checkpointRepo,
+        runRepo
+    );
 
-    const projectId = crypto.randomUUID();
-    const projectSpec = `
-Create a simple REST API with a health-check endpoint.
-Requirement: GET /health returns HTTP 200 with {"status": "ok"}
-Language: Node.js/JavaScript
-`;
-
-    projectRepo.create({
-        id: projectId,
-        name: "Demo REST API",
-        specification: projectSpec,
-        successCriteria: "GET /health returns HTTP 200 with {'status': 'ok'}",
-        currentPhase: "IDLE"
-    });
-
-    console.log(`Created Project: ${projectId}`);
-    
-    await orchestrator.runProject(projectId);
+    await orchestrator.resumeProject(projectId);
 }
 
 main().catch(console.error);

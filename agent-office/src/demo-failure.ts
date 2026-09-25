@@ -11,6 +11,11 @@ import { Athena } from "./agents/managers/athena/Athena";
 import { Ares } from "./agents/managers/ares/Ares";
 import { Apollo } from "./agents/managers/apollo/Apollo";
 import { WorkerFactory } from "./agents/workers/WorkerFactory";
+import { Reviewer } from "./agents/managers/reviewer/Reviewer";
+import { CheckpointRepository } from "./persistence/repositories/CheckpointRepository";
+import { TestResultRepository } from "./persistence/repositories/TestResultRepository";
+import { ArtifactChangeRepository } from "./persistence/repositories/ArtifactChangeRepository";
+import { CodeReviewRepository } from "./persistence/repositories/CodeReviewRepository";
 import { Orchestrator } from "./orchestration/Orchestrator";
 import { ReadFileTool, WriteFileTool, ListFilesTool } from "./tools/FileTools";
 import { ShellTool } from "./tools/ShellTools";
@@ -110,16 +115,14 @@ async function main() {
     ];
     const workerFactory = new WorkerFactory(router, runRepo, tools);
 
-    const orchestrator = new Orchestrator(
-        athena,
-        ares,
-        apollo,
-        workerFactory,
-        projectRepo,
-        milestoneRepo,
-        issueRepo,
-        verificationRepo
-    );
+    
+    const testResultRepo = new TestResultRepository();
+    const artifactChangeRepo = new ArtifactChangeRepository();
+    const codeReviewRepo = new CodeReviewRepository();
+    const checkpointRepo = new CheckpointRepository();
+    const reviewer = new Reviewer(router, runRepo);
+    const orchestrator = new Orchestrator(athena, ares, apollo, reviewer, workerFactory, projectRepo, milestoneRepo, issueRepo, verificationRepo, testResultRepo, artifactChangeRepo, codeReviewRepo, checkpointRepo, runRepo);
+        
 
     const projectId = crypto.randomUUID();
     projectRepo.create({

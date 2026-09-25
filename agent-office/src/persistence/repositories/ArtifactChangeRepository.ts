@@ -1,5 +1,5 @@
+export interface ArtifactChange { id: string; projectId: string; milestoneId: string; issueId: string; agentRunId?: string; path: string; changeType: string; beforeHash?: string | null; afterHash?: string | null; beforeSize?: number | null; afterSize?: number | null; createdAt?: string; }
 import { db } from "../database";
-import { ArtifactChange } from "../../projects/ArtifactChange";
 
 export class ArtifactChangeRepository {
     create(change: ArtifactChange) {

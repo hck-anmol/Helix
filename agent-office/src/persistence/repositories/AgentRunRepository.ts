@@ -35,4 +35,18 @@ export class AgentRunRepository {
         const stmt = db.prepare(`UPDATE agent_runs SET output = ? WHERE id = ?`);
         stmt.run(output, runId);
     }
+
+    updateStatus(id: string, status: string) {
+        const stmt = db.prepare(`UPDATE agent_runs SET status = ? WHERE id = ?`);
+        stmt.run(status, id);
+    }
+
+    markInterrupted(id: string) {
+        this.updateStatus(id, "INTERRUPTED");
+    }
+
+    getStaleRuns(projectId: string): AgentRunRecord[] {
+        const stmt = db.prepare(`SELECT * FROM agent_runs WHERE projectId = ? AND status = 'RUNNING'`);
+        return stmt.all(projectId) as AgentRunRecord[];
+    }
 }

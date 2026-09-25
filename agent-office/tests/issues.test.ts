@@ -42,7 +42,8 @@ function runTests() {
         type: "BUG",
         priority: "HIGH",
         status: "PENDING",
-        fixAttempts: 0
+        fixAttempts: 0,
+        attemptCount: 0
     });
 
     let issue = issueRepo.get(issueId);

@@ -1,5 +1,5 @@
+export interface TestResult { id: string; projectId: string; milestoneId: string; issueId: string; workerRunId: string; command: string; status: string; exitCode: number; stdout: string; stderr: string; durationMs: number; createdAt?: string; }
 import { db } from "../database";
-import { TestResult } from "../../projects/TestResult";
 
 export class TestResultRepository {
     create(result: TestResult) {

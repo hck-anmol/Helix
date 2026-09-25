@@ -1,0 +1,20 @@
+export type IssueType = "FEATURE" | "BUG" | "TASK" | "RESEARCH" | "FIX";
+export type IssuePriority = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+export type IssueStatus = "PENDING" | "READY" | "RUNNING" | "OPEN" | "IN_PROGRESS" | "BLOCKED" | "RESOLVED" | "VERIFIED" | "FAILED";
+
+export interface Issue {
+    id: string;
+    projectId: string;
+    milestoneId: string;
+    title: string;
+    description: string;
+    type: IssueType;
+    priority: IssuePriority;
+    status: IssueStatus;
+    assignedRole?: string;
+    fixAttempts: number;
+    attemptCount: number;
+    sourceVerificationId?: string;
+    createdAt?: string;
+    updatedAt?: string;
+}

@@ -61,9 +61,10 @@ export class Reporter {
             for (const review of reviews) {
                 report += `### Status: ${review.status}\n`;
                 report += `Summary: ${review.summary}\n`;
-                report += `Files Reviewed: ${review.filesReviewed.join(", ")}\n`;
-                const blocking = review.findings.filter(f => f.severity === "CRITICAL" || f.severity === "HIGH").length;
-                const suggestion = review.findings.length - blocking;
+                report += `Files Reviewed: ${JSON.parse(review.filesReviewed || "[]").join(", ")}\n`;
+                const findings = JSON.parse(review.findings || "[]");
+                const blocking = findings.filter((f: any) => f.severity === "CRITICAL" || f.severity === "HIGH").length;
+                const suggestion = findings.length - blocking;
                 report += `Blocking Findings: ${blocking}\n`;
                 report += `Suggestions: ${suggestion}\n\n`;
             }

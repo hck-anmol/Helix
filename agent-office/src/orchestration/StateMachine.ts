@@ -16,7 +16,7 @@ export class StateMachine {
             PLANNED: ["ACTIVE"],
             ACTIVE: ["EXECUTING"],
             EXECUTING: ["VERIFYING", "FAILED"],
-            VERIFYING: ["COMPLETED", "FAILED"],
+            VERIFYING: ["COMPLETED", "FAILED", "EXECUTING"],
             FAILED: ["EXECUTING"],
             COMPLETED: [],
             BLOCKED: ["EXECUTING", "PLANNED"]

@@ -146,6 +146,19 @@ db.exec(`
         FOREIGN KEY(issueId) REFERENCES issues(id),
         FOREIGN KEY(agentRunId) REFERENCES agent_runs(id)
     );
+
+    CREATE TABLE IF NOT EXISTS checkpoints (
+        id TEXT PRIMARY KEY,
+        projectId TEXT,
+        milestoneId TEXT,
+        issueId TEXT,
+        workerId TEXT,
+        phase TEXT,
+        checkpointType TEXT,
+        state TEXT,
+        metadata TEXT,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
 `);
 
 // Auto-migrate to add sourceVerificationId if it doesn't exist

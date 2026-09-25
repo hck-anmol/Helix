@@ -21,6 +21,20 @@ export abstract class BaseAgent<T = any> {
         const model = config.models[this.role];
         const systemPrompt = this.getSystemPrompt(context);
         
+        this.runRepo.create({
+            id: runId,
+            projectId: context.projectId,
+            milestoneId: context.currentMilestoneId || "",
+            issueId: context.currentIssueId || "",
+            agentId: this.id,
+            role: this.role,
+            model,
+            task: "",
+            phase: "EXECUTION",
+            status: "RUNNING",
+            output: ""
+        });
+
         console.log(`[AGENT:${this.role}] Starting...`);
         const startTime = Date.now();
 
@@ -33,37 +47,15 @@ export abstract class BaseAgent<T = any> {
 
             const parsed = this.parseResponse(response.content);
             
-            this.runRepo.create({
-                id: runId,
-                projectId: context.projectId,
-                milestoneId: context.currentMilestoneId || "",
-                issueId: context.currentIssueId || "",
-                agentId: this.id,
-                role: this.role,
-                model,
-                task: "",
-                phase: "EXECUTION",
-                status: "SUCCESS",
-                output: JSON.stringify(parsed)
-            });
+            this.runRepo.updateStatus(runId, "SUCCESS");
+            this.runRepo.updateOutput(runId, JSON.stringify(parsed));
 
             console.log(`[AGENT:${this.role}] Completed in ${Date.now() - startTime}ms.`);
             return { success: true, data: parsed, rawOutput: response.content };
         } catch (error: any) {
             console.error(`[AGENT:${this.role}] Error:`, error.message);
-            this.runRepo.create({
-                id: runId,
-                projectId: context.projectId,
-                milestoneId: context.currentMilestoneId || "",
-                issueId: context.currentIssueId || "",
-                agentId: this.id,
-                role: this.role,
-                model,
-                task: "",
-                phase: "EXECUTION",
-                status: "FAILED",
-                output: error.message
-            });
+            this.runRepo.updateStatus(runId, "FAILED");
+            this.runRepo.updateOutput(runId, error.message);
             return { success: false, error: error.message };
         }
     }

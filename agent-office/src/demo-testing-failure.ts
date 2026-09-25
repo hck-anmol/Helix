@@ -1,3 +1,7 @@
+import { Reviewer } from "./agents/managers/reviewer/Reviewer";
+import { CheckpointRepository } from "./persistence/repositories/CheckpointRepository";
+import { ArtifactChangeRepository } from "./persistence/repositories/ArtifactChangeRepository";
+import { CodeReviewRepository } from "./persistence/repositories/CodeReviewRepository";
 import { Orchestrator } from "./orchestration/Orchestrator";
 import { Athena } from "./agents/managers/athena/Athena";
 import { Ares } from "./agents/managers/ares/Ares";
@@ -26,8 +30,7 @@ async function main() {
     const athena = new Athena(modelRouter, runRepo);
     const ares = new Ares(modelRouter, runRepo);
     const apollo = new Apollo(modelRouter, runRepo);
-    const reviewer = new (require("./agents/managers/reviewer/Reviewer").Reviewer)(modelRouter, runRepo);
-
+    
     const tools = [
         new ReadFileTool(),
         new WriteFileTool(),
@@ -40,14 +43,15 @@ async function main() {
     const milestoneRepo = new MilestoneRepository();
     const issueRepo = new IssueRepository();
     const verificationRepo = new VerificationRepository();
+            
+    
     const testResultRepo = new TestResultRepository();
-    const artifactChangeRepo = new (require("./persistence/repositories/ArtifactChangeRepository").ArtifactChangeRepository)();
-    const codeReviewRepo = new (require("./persistence/repositories/CodeReviewRepository").CodeReviewRepository)();
-
-    const orchestrator = new Orchestrator(
-        athena, ares, apollo, reviewer, workerFactory,
-        projectRepo, milestoneRepo, issueRepo, verificationRepo, testResultRepo, artifactChangeRepo, codeReviewRepo
-    );
+    const artifactChangeRepo = new ArtifactChangeRepository();
+    const codeReviewRepo = new CodeReviewRepository();
+    const checkpointRepo = new CheckpointRepository();
+    const reviewer = new Reviewer(modelRouter, runRepo);
+    const orchestrator = new Orchestrator(athena, ares, apollo, reviewer, workerFactory, projectRepo, milestoneRepo, issueRepo, verificationRepo, testResultRepo, artifactChangeRepo, codeReviewRepo, checkpointRepo, runRepo);
+        
 
     const projectId = crypto.randomUUID();
     projectRepo.create({
@@ -95,7 +99,7 @@ async function main() {
     };
 
     ares.invoke = async (prompt) => {
-        const readyIssueMatch = prompt.match(/READY Issues:\n([\s\S]*?)\nProvide workers/);
+        const readyIssueMatch = prompt.match(/READY Issues:\n([\s\S]*)/);
         const tasks = [];
         if (readyIssueMatch && readyIssueMatch[1]) {
             const lines = readyIssueMatch[1].trim().split("\n");
