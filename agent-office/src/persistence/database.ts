@@ -210,9 +210,27 @@ db.exec(`
     CREATE INDEX IF NOT EXISTS idx_execution_events_agentRunId ON execution_events(agentRunId);
 `);
 
-// Auto-migrate to add sourceVerificationId if it doesn't exist
+// Auto-migrate to add missing columns if they don't exist
 try {
     db.exec(`ALTER TABLE issues ADD COLUMN sourceVerificationId TEXT`);
 } catch (e) {
     // Ignore if column already exists
+}
+
+try {
+    db.exec(`ALTER TABLE agent_runs ADD COLUMN contractId TEXT`);
+} catch (e) {
+    // Ignore
+}
+
+try {
+    db.exec(`ALTER TABLE agent_runs ADD COLUMN contextHash TEXT`);
+} catch (e) {
+    // Ignore
+}
+
+try {
+    db.exec(`ALTER TABLE agent_runs ADD COLUMN duration INTEGER`);
+} catch (e) {
+    // Ignore
 }

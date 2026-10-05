@@ -285,11 +285,23 @@ export class ParallelExecutor {
             const reviewCtx = builder.build(projectId, milestoneId, issue.id, { maxAgentRuns: 2, maxArtifactChanges: 5 });
             context.historicalContext = ContextSerializer.serialize(reviewCtx);
             
-            const reviewResult = await this.reviewer.invoke(reviewPrompt, context);
+            let reviewResult: any;
+            for (let attempt = 1; attempt <= 3; attempt++) {
+                reviewResult = await this.reviewer.invoke(reviewPrompt, context);
+                if (reviewResult.success && reviewResult.data) {
+                    break;
+                } else {
+                    console.warn(`[REVIEWER] Attempt ${attempt} failed: ${reviewResult.error}`);
+                    if (attempt < 3) {
+                        continue;
+                    }
+                }
+            }
+
             if (reviewResult.success && reviewResult.data) {
                 this.codeReviewRepo.create({
                     id: crypto.randomUUID(), projectId, milestoneId, issueId: issue.id, agentRunId: reviewResult.runId!,
-                    status: reviewResult.data.status, summary: reviewResult.data.summary, findings: JSON.stringify(reviewResult.data.findings), filesReviewed: JSON.stringify(artifactChanges.map((c: any) => c.path))
+                    status: reviewResult.data.status, summary: reviewResult.data.summary, findings: reviewResult.data.findings, filesReviewed: artifactChanges.map((c: any) => c.path)
                 });
 
                 if (reviewResult.data.status === "FAIL") {
@@ -309,7 +321,7 @@ export class ParallelExecutor {
                         this.issueRepo.create({
                             id: fixId, projectId, milestoneId, title: `Fix Code Review findings for ${issue.title}`,
                             description: `The reviewer rejected the implementation. Fix these issues:\n${fixDesc}`,
-                            type: "FIX", priority: "HIGH", status: "READY", fixAttempts: 0, attemptCount: 0, assignedRole: "developer"
+                            type: "FIX", priority: "HIGH", status: "READY", fixAttempts: 0, attemptCount: 0, assignedRole: "developer", sourceVerificationId: undefined
                         });
                         eventEmitter.emit({ projectId, milestoneId, issueId: fixId, eventType: "FIX_CREATED", message: "Review fix created" });
                         for (const depId of this.issueRepo.getDependents(issue.id)) this.issueRepo.addDependency(depId, fixId);

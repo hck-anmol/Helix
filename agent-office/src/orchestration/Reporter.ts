@@ -11,6 +11,8 @@ import { CodeReviewRepository } from "../persistence/repositories/CodeReviewRepo
 import { AgentRunRepository } from "../persistence/repositories/AgentRunRepository";
 import { AgentContractRepository } from "../persistence/repositories/AgentContractRepository";
 
+import { ExecutionEventRepository } from "../observability/ExecutionEventRepository";
+
 export class Reporter {
     constructor(
         private milestoneRepo: MilestoneRepository,
@@ -20,7 +22,8 @@ export class Reporter {
         private artifactChangeRepo?: ArtifactChangeRepository,
         private codeReviewRepo?: CodeReviewRepository,
         private runRepo?: AgentRunRepository,
-        private contractRepo?: AgentContractRepository
+        private contractRepo?: AgentContractRepository,
+        private executionEventRepo?: ExecutionEventRepository
     ) {}
 
     generateMilestoneReport(projectId: string, milestoneId: string) {
@@ -66,8 +69,8 @@ export class Reporter {
             for (const review of reviews) {
                 report += `### Status: ${review.status}\n`;
                 report += `Summary: ${review.summary}\n`;
-                report += `Files Reviewed: ${JSON.parse(review.filesReviewed || "[]").join(", ")}\n`;
-                const findings = JSON.parse(review.findings || "[]");
+                report += `Files Reviewed: ${(review.filesReviewed || []).join(", ")}\n`;
+                const findings = review.findings || [];
                 const blocking = findings.filter((f: any) => f.severity === "CRITICAL" || f.severity === "HIGH").length;
                 const suggestion = findings.length - blocking;
                 report += `Blocking Findings: ${blocking}\n`;
@@ -126,6 +129,75 @@ export class Reporter {
                 report += `- [${run.startedAt}] **${run.role}** (${run.phase}) -> ${run.status}\n`;
                 if (run.duration) report += `  Duration: ${run.duration}ms\n`;
             }
+        }
+
+        if (this.executionEventRepo) {
+            report += `\n## Observability Summary\n\n`;
+            const events = this.executionEventRepo.listByMilestone(milestoneId);
+            
+            let totalAgentRuns = 0;
+            let successfulAgentRuns = 0;
+            let failedAgentRuns = 0;
+            let totalToolExecutions = 0;
+            let totalTestRuns = 0;
+            let passedTests = 0;
+            let failedTests = 0;
+            let reviewerAttempts = 0;
+            let reviewerFailures = 0;
+            let totalExecutionDuration = 0;
+            let checkpointRecoveryEvents = 0;
+
+            for (const event of events) {
+                if (event.eventType === "AGENT_STARTED") totalAgentRuns++;
+                if (event.eventType === "AGENT_COMPLETED") successfulAgentRuns++;
+                if (event.eventType === "AGENT_FAILED") failedAgentRuns++;
+                if (event.eventType === "TOOL_STARTED") totalToolExecutions++;
+                if (event.eventType === "TEST_STARTED") totalTestRuns++;
+                if (event.eventType === "TEST_PASSED") passedTests++;
+                if (event.eventType === "TEST_FAILED") failedTests++;
+                if (event.eventType === "REVIEW_STARTED") reviewerAttempts++;
+                if (event.eventType === "REVIEW_FAILED") reviewerFailures++;
+                if (event.eventType === "CHECKPOINT_CREATED") checkpointRecoveryEvents++;
+                if (event.eventType === "RESUME_STARTED") checkpointRecoveryEvents++;
+                
+                if (event.durationMs && (event.eventType === "AGENT_COMPLETED" || event.eventType === "AGENT_FAILED" || event.eventType === "TOOL_COMPLETED" || event.eventType === "OLLAMA_CALL_COMPLETED" || event.eventType === "OLLAMA_CALL_FAILED")) {
+                    if (event.eventType.startsWith("AGENT_") || event.eventType.startsWith("TOOL_") || event.eventType.startsWith("OLLAMA_")) {
+                        // avoid double counting? Let's just sum AGENT_ duration
+                        if (event.eventType.startsWith("AGENT_")) {
+                            totalExecutionDuration += event.durationMs;
+                        }
+                    }
+                }
+            }
+
+            let interruptedAgentRuns = 0;
+            if (this.runRepo) {
+                const runs = this.runRepo.listByMilestone(milestoneId);
+                interruptedAgentRuns = runs.filter((r: any) => r.status === "INTERRUPTED").length;
+            }
+
+            report += `- Total agent runs: ${totalAgentRuns}\n`;
+            report += `- Successful agent runs: ${successfulAgentRuns}\n`;
+            report += `- Failed agent runs: ${failedAgentRuns}\n`;
+            report += `- Interrupted agent runs: ${interruptedAgentRuns}\n`;
+            report += `- Total tool executions: ${totalToolExecutions}\n`;
+            report += `- Total test runs: ${totalTestRuns}\n`;
+            report += `- Passed tests: ${passedTests}\n`;
+            report += `- Failed tests: ${failedTests}\n`;
+            report += `- Reviewer attempts: ${reviewerAttempts}\n`;
+            report += `- Reviewer failures: ${reviewerFailures}\n`;
+            report += `- Total execution duration: ${totalExecutionDuration}ms\n`;
+            report += `- Checkpoint/recovery events: ${checkpointRecoveryEvents}\n`;
+
+            report += `\n## Observability Events\n\n`;
+            for (const event of events) {
+                report += `- [${event.timestamp}] **${event.eventType}** (Issue: ${event.issueId || 'N/A'})\n`;
+                if (event.role) report += `  Role: ${event.role}\n`;
+                if (event.status) report += `  Status: ${event.status}\n`;
+                if (event.message) report += `  Message: ${event.message}\n`;
+                if (event.durationMs) report += `  Duration: ${event.durationMs}ms\n`;
+            }
+            if (events.length === 0) report += `*No observability events recorded.*\n`;
         }
 
         report += `\nFinal result:\n${milestone.status}\n`;

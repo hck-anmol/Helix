@@ -1,4 +1,4 @@
-export interface CodeReview { id: string; projectId: string; milestoneId: string; issueId: string; agentRunId: string; status: string; summary: string; findings: string; filesReviewed: string; createdAt?: string; }
+export interface CodeReview { id: string; projectId: string; milestoneId: string; issueId: string; agentRunId: string; status: string; summary: string; findings: any[]; filesReviewed: string[]; createdAt?: string; }
 import { db } from "../database";
 
 export class CodeReviewRepository {

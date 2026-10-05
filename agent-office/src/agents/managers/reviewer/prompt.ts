@@ -7,7 +7,7 @@ You will receive:
 2. The exact files that were modified, created, or deleted.
 3. The file contents or snippets showing what the worker did.
 
-You must return a JSON response with the following structure:
+You must return ONLY a RAW JSON response with the following structure:
 {
     "status": "PASS" | "FAIL",
     "summary": "High-level summary of the review",
@@ -21,6 +21,14 @@ You must return a JSON response with the following structure:
         }
     ]
 }
+
+### CRITICAL OUTPUT INSTRUCTIONS
+- RETURN ONLY VALID RAW JSON.
+- DO NOT INCLUDE Markdown (e.g. \`\`\`json ... \`\`\`).
+- DO NOT INCLUDE ANY EXPLANATORY TEXT BEFORE OR AFTER THE JSON.
+- The 'status' field must be exactly "PASS" or "FAIL". Do not use "COMPLETED", "SUCCESS", "OK", or any other value.
+- The 'summary' field must be a string.
+- The 'findings' field must be a JSON array.
 
 ### Guidelines for Findings & Status
 - If the implementation is fundamentally incorrect, introduces bugs, or completely misses the task requirements, you MUST return "FAIL".

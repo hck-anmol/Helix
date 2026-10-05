@@ -18,8 +18,13 @@ export class Reviewer extends BaseAgent<ReviewerOutput> {
 
     parseResponse(response: string): ReviewerOutput {
         try {
-            const cleaned = response.replace(/```json/g, "").replace(/```/g, "").trim();
-            const parsed = JSON.parse(cleaned);
+            const startIdx = response.indexOf('{');
+            const endIdx = response.lastIndexOf('}');
+            if (startIdx === -1 || endIdx === -1) {
+                throw new Error("No JSON object found in response");
+            }
+            const jsonStr = response.substring(startIdx, endIdx + 1);
+            const parsed = JSON.parse(jsonStr);
             return ReviewerOutputSchema.parse(parsed);
         } catch (error) {
             throw new Error(`Reviewer output validation failed: ${error}`);

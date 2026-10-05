@@ -35,6 +35,12 @@ export class ExecutionEventRepository {
         return rows.map(this.mapRowToEvent);
     }
 
+    listByMilestone(milestoneId: string): ExecutionEvent[] {
+        const stmt = db.prepare(`SELECT * FROM execution_events WHERE milestoneId = ? ORDER BY timestamp ASC`);
+        const rows = stmt.all(milestoneId) as any[];
+        return rows.map(this.mapRowToEvent);
+    }
+
     listByIssue(issueId: string): ExecutionEvent[] {
         const stmt = db.prepare(`SELECT * FROM execution_events WHERE issueId = ? ORDER BY timestamp ASC`);
         const rows = stmt.all(issueId) as any[];

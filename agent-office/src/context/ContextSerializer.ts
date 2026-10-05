@@ -5,7 +5,7 @@ export class ContextSerializer {
     static serialize(context: ExecutionContext): string {
         let output = "";
         
-        output += `=== PROJECT ===\nName: ${context.project.name}\nSpec: ${context.project.specification.trim()}\n\n`;
+        output += `=== PROJECT ===\nName: ${context.project.name}\nSpec: ${(context.project.specification || "").trim()}\n\n`;
         
         if (context.milestone) {
             output += `=== MILESTONE ===\nTitle: ${context.milestone.title}\nDescription: ${context.milestone.description}\n\n`;

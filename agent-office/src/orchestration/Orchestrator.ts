@@ -162,7 +162,7 @@ export class Orchestrator {
                         milestoneId,
                         title: t.title,
                         description: t.title,
-                        type: t.type,
+                        type: t.type as any,
                         priority: "MEDIUM",
                         status: "PENDING",
                         fixAttempts: 0,
@@ -389,7 +389,8 @@ export class Orchestrator {
                 }
             }
             
-            const reporter = new (require("./Reporter").Reporter)(this.milestoneRepo, this.issueRepo, this.verificationRepo, this.testResultRepo, this.artifactChangeRepo, this.codeReviewRepo);
+            const executionEventRepo = new (require("../observability/ExecutionEventRepository").ExecutionEventRepository)();
+            const reporter = new (require("./Reporter").Reporter)(this.milestoneRepo, this.issueRepo, this.verificationRepo, this.testResultRepo, this.artifactChangeRepo, this.codeReviewRepo, undefined, undefined, executionEventRepo);
             reporter.generateMilestoneReport(projectId, milestoneId);
             
             if (this.checkpointRepo && state.phase === "COMPLETED") {
