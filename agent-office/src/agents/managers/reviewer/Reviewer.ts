@@ -12,7 +12,9 @@ export class Reviewer extends BaseAgent<ReviewerOutput> {
     }
 
     getSystemPrompt(context: AgentContext): string {
-        return REVIEWER_SYSTEM_PROMPT;
+        return context.historicalContext ? `${REVIEWER_SYSTEM_PROMPT}
+
+${context.historicalContext}` : REVIEWER_SYSTEM_PROMPT;
     }
 
     parseResponse(response: string): ReviewerOutput {

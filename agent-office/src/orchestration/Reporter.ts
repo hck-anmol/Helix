@@ -8,6 +8,9 @@ import { TestResultRepository } from "../persistence/repositories/TestResultRepo
 import { ArtifactChangeRepository } from "../persistence/repositories/ArtifactChangeRepository";
 import { CodeReviewRepository } from "../persistence/repositories/CodeReviewRepository";
 
+import { AgentRunRepository } from "../persistence/repositories/AgentRunRepository";
+import { AgentContractRepository } from "../persistence/repositories/AgentContractRepository";
+
 export class Reporter {
     constructor(
         private milestoneRepo: MilestoneRepository,
@@ -15,7 +18,9 @@ export class Reporter {
         private verificationRepo: VerificationRepository,
         private testResultRepo?: TestResultRepository,
         private artifactChangeRepo?: ArtifactChangeRepository,
-        private codeReviewRepo?: CodeReviewRepository
+        private codeReviewRepo?: CodeReviewRepository,
+        private runRepo?: AgentRunRepository,
+        private contractRepo?: AgentContractRepository
     ) {}
 
     generateMilestoneReport(projectId: string, milestoneId: string) {
@@ -100,7 +105,29 @@ export class Reporter {
             report += "\n";
         });
 
-        report += `Final result:\n${milestone.status}\n`;
+        if (this.contractRepo) {
+            report += `\n## Agent Contracts\n\n`;
+            const contracts = this.contractRepo.listByMilestone(milestoneId);
+            for (const contract of contracts) {
+                report += `- [${contract.createdAt}] **${contract.contractType}** -> ${contract.receiver} (Status: ${contract.status})\n`;
+                report += `  Objective: ${contract.objective}\n`;
+                if (contract.resultStatus) {
+                    report += `  Result: ${contract.resultStatus} (${contract.resultSummary})\n`;
+                }
+            }
+            if (contracts.length === 0) report += `*No contracts created.*\n\n`;
+        }
+
+        if (this.runRepo) {
+            report += `\n## Execution History\n\n`;
+            const runs = this.runRepo.listByMilestone(milestoneId);
+            for (const run of runs) {
+                report += `- [${run.startedAt}] **${run.role}** (${run.phase}) -> ${run.status}\n`;
+                if (run.duration) report += `  Duration: ${run.duration}ms\n`;
+            }
+        }
+
+        report += `\nFinal result:\n${milestone.status}\n`;
 
         const reportsDir = path.join(config.workspaceRoot, projectId, "reports");
         if (!fs.existsSync(reportsDir)) {

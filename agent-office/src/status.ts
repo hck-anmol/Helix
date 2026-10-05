@@ -100,6 +100,26 @@ function renderStatus() {
         console.log("Not started");
     }
 
+    const allRuns = db.prepare(`SELECT COUNT(*) as count FROM agent_runs WHERE projectId = ?`).get(project.id) as any;
+    const fixIssues = db.prepare(`SELECT COUNT(*) as count FROM issues WHERE projectId = ? AND type = 'FIX'`).get(project.id) as any;
+    const allReviews = db.prepare(`SELECT COUNT(*) as count FROM code_reviews WHERE projectId = ?`).get(project.id) as any;
+    const allTestRuns = db.prepare(`SELECT COUNT(*) as count FROM test_runs WHERE projectId = ?`).get(project.id) as any;
+    const allVerifications = db.prepare(`SELECT COUNT(*) as count FROM verification_runs WHERE milestoneId IN (SELECT id FROM milestones WHERE projectId = ?)`).get(project.id) as any;
+    
+    // Add Contract Stats
+    let allContracts = { count: 0 };
+    try {
+        allContracts = db.prepare(`SELECT COUNT(*) as count FROM agent_contracts WHERE projectId = ?`).get(project.id) as any;
+    } catch(e) {}
+    
+    console.log(`\nHistory:`);
+    console.log(`Contracts: ${allContracts.count}`);
+    console.log(`Attempts: ${allRuns.count}`);
+    console.log(`Fixes: ${fixIssues.count}`);
+    console.log(`Reviews: ${allReviews.count}`);
+    console.log(`Test Runs: ${allTestRuns.count}`);
+    console.log(`Verification Runs: ${allVerifications.count}`);
+
     console.log("\n========================================");
 }
 

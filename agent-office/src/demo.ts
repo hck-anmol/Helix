@@ -39,15 +39,14 @@ async function main() {
     ];
     const workerFactory = new WorkerFactory(router, runRepo, tools);
 
+    const testResultRepo = new (require("./persistence/repositories/TestResultRepository").TestResultRepository)();
+    const artifactChangeRepo = new (require("./persistence/repositories/ArtifactChangeRepository").ArtifactChangeRepository)();
+    const codeReviewRepo = new (require("./persistence/repositories/CodeReviewRepository").CodeReviewRepository)();
+    const reviewer = new (require("./agents/managers/reviewer/Reviewer").Reviewer)(router, runRepo);
+
     const orchestrator = new Orchestrator(
-        athena,
-        ares,
-        apollo,
-        workerFactory,
-        projectRepo,
-        milestoneRepo,
-        issueRepo,
-        verificationRepo
+        athena, ares, apollo, reviewer, workerFactory,
+        projectRepo, milestoneRepo, issueRepo, verificationRepo, testResultRepo, artifactChangeRepo, codeReviewRepo
     );
 
     const projectId = crypto.randomUUID();

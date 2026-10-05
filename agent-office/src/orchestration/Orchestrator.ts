@@ -1,3 +1,4 @@
+import { ParallelExecutor } from "./ParallelExecutor";
 import { StateMachine } from "./StateMachine";
 import { Athena } from "../agents/managers/athena/Athena";
 import { Ares } from "../agents/managers/ares/Ares";
@@ -16,11 +17,19 @@ import { ArtifactSnapshot } from "../utils/ArtifactSnapshot";
 import { AgentContext } from "../agents/base/AgentContext";
 import { config } from "../config/config";
 import crypto from "crypto";
+import { ContextBuilder } from "../context/ContextBuilder";
+import { ContextSerializer } from "../context/ContextSerializer";
+import { AgentRunRepository } from "../persistence/repositories/AgentRunRepository";
+import { AgentContractRepository } from "../persistence/repositories/AgentContractRepository";
 
 const MAX_VERIFICATION_ATTEMPTS = 3;
 const MAX_FIX_ATTEMPTS_PER_ISSUE = 2;
 
 export class Orchestrator {
+    private contextBuilder: ContextBuilder;
+    private runRepo = new AgentRunRepository();
+    private contractRepo = new AgentContractRepository();
+
     constructor(
         private athena: Athena,
         private ares: Ares,
@@ -34,7 +43,24 @@ export class Orchestrator {
         private testResultRepo: TestResultRepository,
         private artifactChangeRepo: ArtifactChangeRepository,
         private codeReviewRepo: CodeReviewRepository
-    ) {}
+    ) {
+        this.contextBuilder = new ContextBuilder(
+            projectRepo, milestoneRepo, issueRepo, this.runRepo,
+            codeReviewRepo, artifactChangeRepo, testResultRepo, verificationRepo
+        );
+    }
+
+    private _injectContext(context: AgentContext, limits?: any) {
+        const executionContext = this.contextBuilder.build(
+            context.projectId,
+            context.currentMilestoneId,
+            context.currentIssueId,
+            limits
+        );
+        const serialized = ContextSerializer.serialize(executionContext);
+        context.historicalContext = serialized;
+        context.contextHash = ContextSerializer.hash(serialized);
+    }
 
     async runProject(projectId: string) {
         const project = this.projectRepo.get(projectId);
@@ -54,6 +80,7 @@ export class Orchestrator {
             console.log(`[ORCHESTRATOR] Phase: STRATEGY`);
             console.log(`[ATHENA] Generating milestone...`);
             
+            this._injectContext(context);
             const athenaResult = await this.athena.invoke(`Create the next milestone for the project: ${project.specification}`, context);
             if (!athenaResult.success || !athenaResult.data) throw new Error("Athena failed to generate milestone");
             
@@ -90,259 +117,145 @@ export class Orchestrator {
             }
 
             context.currentMilestone = milestoneData;
+            context.currentMilestoneId = milestoneId;
             state.transition("ACTIVE");
 
+            
+            const executor = new ParallelExecutor(
+                this.projectRepo,
+                this.issueRepo,
+                this.contractRepo,
+                this.runRepo,
+                this.artifactChangeRepo,
+                this.testResultRepo,
+                this.codeReviewRepo,
+                this.milestoneRepo,
+                this.verificationRepo,
+                this.workerFactory,
+                this.reviewer,
+                this.ares
+            );
+
+            let attempts = 0;
+            const MAX_VERIFICATION_ATTEMPTS = 3;
             let running = true;
-            while (running) {
+            
+            while (running && attempts < MAX_VERIFICATION_ATTEMPTS) {
+                attempts++;
+                
                 if (state.phase !== "EXECUTING") {
                     state.transition("EXECUTING");
                     this.milestoneRepo.updateStatus(milestoneId, "EXECUTING");
                 }
-
-                // Evaluate dependencies
-                this.issueRepo.evaluateIssueStates(milestoneId);
-                const allIssues = this.issueRepo.listByMilestone(milestoneId);
                 
-                const readyIssues = scheduler.getReadyIssues(milestoneId);
-                const openOrBlocked = allIssues.filter(i => ["PENDING", "READY", "BLOCKED", "FAILED", "RUNNING", "OPEN"].includes(i.status));
+                await executor.executeMilestone(context);
 
-                if (readyIssues.length > 0) {
-                    console.log(`[ORCHESTRATOR] Phase: EXECUTION`);
-                    console.log(`[ARES] Creating worker schedule for ${readyIssues.length} READY issues...`);
+                const allIssues = this.issueRepo.listByMilestone(milestoneId);
+                const unresolved = allIssues.filter(i => ["PENDING", "READY", "BLOCKED"].includes(i.status));
+                
+                if (unresolved.length > 0) {
+                    console.error(`[ORCHESTRATOR] Deadlock detected: ${unresolved.length} unresolved issues but 0 READY issues.`);
+                    state.transition("FAILED");
+                    this.milestoneRepo.updateStatus(milestoneId, "FAILED");
+                    running = false;
+                    break;
+                }
+
+                // All issues resolved. Proceed to verification.
+                state.transition("VERIFYING");
+                this.milestoneRepo.updateStatus(milestoneId, "VERIFYING");
+                console.log(`[ORCHESTRATOR] Phase: VERIFICATION`);
+                console.log(`[APOLLO] Verifying milestone...`);
+                
+                const testRuns = this.testResultRepo.listByMilestone(milestoneId);
+                const testsContext = testRuns.map(tr => `[Test] ${tr.command} | Exit: ${tr.exitCode} | Status: ${tr.status}\nSTDOUT: ${tr.stdout}\nSTDERR: ${tr.stderr}`).join("\n\n");
+                const apolloContext = `\nIssues:\n${allIssues.map(i => `- ${i.title} (${i.status})`).join("\n")}\n\nTest Evidence:\n${testsContext}`;
+                
+                // VERIFICATION CONTRACT
+                const verificationContractId = crypto.randomUUID();
+                const verificationContract = {
+                    id: verificationContractId,
+                    projectId, milestoneId, issueId: undefined,
+                    sender: "orchestrator" as const, receiver: "apollo" as const,
+                    contractType: "VERIFICATION" as const,
+                    objective: "Verify milestone completion",
+                    inputs: { testEvidence: testRuns.length },
+                    acceptanceCriteria: [], constraints: [],
+                    status: "CREATED" as const, createdAt: new Date().toISOString()
+                };
+                this.contractRepo.create(verificationContract);
+                this.contractRepo.updateStatus(verificationContractId, "RUNNING");
+                
+                context.currentContractId = verificationContractId;
+                this._injectContext(context, { maxVerificationRuns: 2, maxTestResults: 10 });
+                if (context.contextHash) this.contractRepo.updateContextHash(verificationContractId, context.contextHash);
+                
+                const apolloResult = await this.apollo.invoke(`Verify if the milestone was completed. Milestone: ${JSON.stringify(context.currentMilestone)}${apolloContext}`, context);
+                
+                if (!apolloResult.success || !apolloResult.data) {
+                    this.contractRepo.reject(verificationContractId, "Verification execution failed");
+                    throw new Error("Apollo failed to verify");
+                }
+
+                const verification = apolloResult.data;
+                const milestoneRecord = this.milestoneRepo.getPendingByProject(projectId) || this.milestoneRepo.get(milestoneId)!;
+                const attemptNum = (milestoneRecord.verificationAttempts || 0) + 1;
+
+                const verificationRunId = crypto.randomUUID();
+                this.verificationRepo.create({
+                    id: verificationRunId,
+                    milestoneId,
+                    attemptNumber: attemptNum,
+                    status: verification.status,
+                    evidence: JSON.stringify(verification.evidence),
+                    failures: JSON.stringify(verification.failures || []),
+                    requiredFixes: JSON.stringify(verification.requiredFixes || [])
+                });
+
+                this.milestoneRepo.incrementVerificationAttempts(milestoneId);
+
+                if (verification.status === "PASS") {
+                    console.log(`[APOLLO] PASS`);
+                    this.contractRepo.complete(verificationContractId, "PASS", "Milestone Verified", verification);
+                    state.transition("COMPLETED");
+                    this.milestoneRepo.updateStatus(milestoneId, "COMPLETED");
                     
-                    const issueContext = `\nREADY Issues:\n${readyIssues.map(i => `- [${i.id}] ${i.title} (${i.priority})`).join("\n")}`;
+                    allIssues.forEach(issue => this.issueRepo.updateStatus(issue.id, "VERIFIED"));
                     
-                    const aresResult = await this.ares.invoke(`Schedule workers for this milestone: ${JSON.stringify(context.currentMilestone)}${issueContext}\nProvide workers to achieve this and fix the issues.`, context);
-                    if (!aresResult.success || !aresResult.data) throw new Error("Ares failed to create schedule");
+                    running = false;
+                } else {
+                    console.log(`[APOLLO] FAIL. Required fixes: ${verification.requiredFixes?.join(", ")}`);
+                    this.contractRepo.complete(verificationContractId, "FAIL", "Verification Failed", verification);
+                    context.verificationFeedback = verification;
                     
-                    for (const scheduledTask of aresResult.data.tasks) {
-                        const issue = this.issueRepo.get(scheduledTask.issueId);
-                        if (!issue) continue;
-                        
-                        // Wait, check if issue was already resolved in this loop by a previous sequential task
-                        if (issue.status === "RESOLVED" || issue.status === "VERIFIED") continue;
-
-                        console.log(`[WORKER:${scheduledTask.workerRole}] Starting task for Issue ${issue.id}: ${scheduledTask.task}`);
-                        this.issueRepo.updateStatus(issue.id, "RUNNING");
-                        
-                        let enrichedTask = scheduledTask.task;
-                        if (context.verificationFeedback) {
-                            enrichedTask += `\n\nContext from previous failure:\nEvidence: ${context.verificationFeedback.evidence.join(", ")}\nRequired Fixes: ${context.verificationFeedback.requiredFixes.join(", ")}`;
-                        }
-
-                        // We pass the issueId to the worker factory or context so it logs the correct agent run
-                        context.currentIssueId = issue.id;
-                        context.currentMilestoneId = milestoneId;
-
-                        const worker = this.workerFactory.createWorker(scheduledTask.workerRole, enrichedTask);
-                        const snapshotBefore = ArtifactSnapshot.takeSnapshot(context.workspaceRoot);
-                        const workerResult = await worker.executeTask(context);
-                        const snapshotAfter = ArtifactSnapshot.takeSnapshot(context.workspaceRoot);
-                        
-                        const artifactChanges = ArtifactSnapshot.compare(snapshotBefore, snapshotAfter);
-                        for (const change of artifactChanges) {
-                            this.artifactChangeRepo.create({
-                                id: crypto.randomUUID(),
-                                projectId,
-                                milestoneId,
-                                issueId: issue.id,
-                                agentRunId: worker.id,
-                                ...change
-                            });
-                        }
-                        
-                        // Save any test runs that occurred
-                        if (workerResult.data?.testsRun) {
-                            for (const tr of workerResult.data.testsRun) {
-                                this.testResultRepo.create({
-                                    id: crypto.randomUUID(),
-                                    projectId,
-                                    milestoneId,
-                                    issueId: issue.id,
-                                    workerRunId: worker.id,
-                                    command: tr.command,
-                                    status: tr.status as any,
-                                    exitCode: tr.exitCode,
-                                    stdout: tr.stdout || "",
-                                    stderr: tr.stderr || "",
-                                    durationMs: tr.durationMs || 0
-                                });
-                            }
-                        }
-
-                        this.issueRepo.incrementAttemptCount(issue.id);
-
-                        if (!workerResult.success || workerResult.data?.status === "FAILED") {
-                            console.error(`[WORKER:${scheduledTask.workerRole}] Failed: ${workerResult.error || workerResult.data?.message}`);
-                            this.issueRepo.updateStatus(issue.id, "FAILED");
-                            this.issueRepo.incrementFixAttempts(issue.id);
-                            
-                            const updated = this.issueRepo.get(issue.id)!;
-                            if (updated.fixAttempts >= MAX_FIX_ATTEMPTS_PER_ISSUE) {
-                                console.log(`[ORCHESTRATOR] Issue ${issue.id} reached MAX_FIX_ATTEMPTS_PER_ISSUE (${MAX_FIX_ATTEMPTS_PER_ISSUE}). Stopping safely.`);
-                                state.transition("FAILED");
-                                this.milestoneRepo.updateStatus(milestoneId, "FAILED");
-                                running = false;
-                                break;
-                            }
-                        } else {
-                            console.log(`[WORKER:${scheduledTask.workerRole}] Success`);
-                            
-                            // CODE REVIEW
-                            if (artifactChanges.length > 0 && worker.role !== "tester" && worker.role !== "reviewer") {
-                                console.log(`[REVIEWER] Inspecting ${artifactChanges.length} changes...`);
-                                
-                                const changesContext = artifactChanges.map(c => `- ${c.path} (${c.changeType})`).join("\n");
-                                const reviewPrompt = `Task:\n${enrichedTask}\n\nChanges made by worker:\n${changesContext}\n\nPlease review these artifacts in the workspace.`;
-                                
-                                const reviewResult = await this.reviewer.invoke(reviewPrompt, context);
-                                
-                                if (reviewResult.success && reviewResult.data) {
-                                    const reviewId = crypto.randomUUID();
-                                    this.codeReviewRepo.create({
-                                        id: reviewId,
-                                        projectId,
-                                        milestoneId,
-                                        issueId: issue.id,
-                                        agentRunId: worker.id,
-                                        status: reviewResult.data.status,
-                                        summary: reviewResult.data.summary,
-                                        findings: reviewResult.data.findings,
-                                        filesReviewed: artifactChanges.map(c => c.path)
-                                    });
-
-                                    if (reviewResult.data.status === "FAIL") {
-                                        console.log(`[REVIEWER] FAIL. Required fixes identified.`);
-                                        
-                                        const blockingFindings = reviewResult.data.findings.filter(f => f.severity === "CRITICAL" || f.severity === "HIGH");
-                                        if (blockingFindings.length > 0) {
-                                            // The worker finished their work, but it was rejected.
-                                            this.issueRepo.updateStatus(issue.id, "RESOLVED"); // Original is technically resolved
-
-                                            // Create FIX issue
-                                            const fixId = crypto.randomUUID();
-                                            const fixDesc = blockingFindings.map(f => `- ${f.file || 'General'}: ${f.message}`).join("\n");
-                                            console.log(`[ISSUE] Creating FIX issue from Code Review: ${fixId}`);
-                                            
-                                            this.issueRepo.create({
-                                                id: fixId,
-                                                projectId,
-                                                milestoneId,
-                                                title: `Fix Code Review findings for ${issue.title}`,
-                                                description: `The reviewer rejected the implementation. Fix these issues:\n${fixDesc}`,
-                                                type: "FIX",
-                                                priority: "HIGH",
-                                                status: "READY",
-                                                fixAttempts: 0,
-                                                attemptCount: 0,
-                                                assignedRole: "developer"
-                                            });
-
-                                            // Re-point dependents
-                                            const dependents = this.issueRepo.getDependents(issue.id);
-                                            for (const depId of dependents) {
-                                                this.issueRepo.addDependency(depId, fixId);
-                                            }
-                                        } else {
-                                            this.issueRepo.updateStatus(issue.id, "RESOLVED");
-                                        }
-                                    } else {
-                                        console.log(`[REVIEWER] PASS`);
-                                        this.issueRepo.updateStatus(issue.id, "RESOLVED");
-                                    }
-                                } else {
-                                    console.error(`[REVIEWER] Failed to execute code review`);
-                                    this.issueRepo.updateStatus(issue.id, "RESOLVED"); // Fallback to success if review errors out
-                                }
-                            } else {
-                                this.issueRepo.updateStatus(issue.id, "RESOLVED");
-                            }
-                        }
-                    }
-                } else if (openOrBlocked.length > 0) {
-                    // There are unresolved issues but none are READY. This means there's a deadlock or all are BLOCKED.
-                    const blocked = allIssues.filter(i => i.status === "BLOCKED");
-                    if (blocked.length > 0) {
-                        console.error(`[ORCHESTRATOR] Deadlock detected: ${blocked.length} issues BLOCKED but 0 READY issues.`);
+                    if (attemptNum >= MAX_VERIFICATION_ATTEMPTS) {
+                        console.log(`[ORCHESTRATOR] Reached MAX_VERIFICATION_ATTEMPTS (${MAX_VERIFICATION_ATTEMPTS}). Stopping safely.`);
                         state.transition("FAILED");
                         this.milestoneRepo.updateStatus(milestoneId, "FAILED");
                         running = false;
                         break;
                     }
-                } else {
-                    // All issues resolved. Proceed to verification.
-                    state.transition("VERIFYING");
-                    this.milestoneRepo.updateStatus(milestoneId, "VERIFYING");
-                    console.log(`[ORCHESTRATOR] Phase: VERIFICATION`);
-                    console.log(`[APOLLO] Verifying milestone...`);
-                    
-                    const testRuns = this.testResultRepo.listByMilestone(milestoneId);
-                    const testsContext = testRuns.map(tr => `[Test] ${tr.command} | Exit: ${tr.exitCode} | Status: ${tr.status}\nSTDOUT: ${tr.stdout}\nSTDERR: ${tr.stderr}`).join("\n\n");
-                    const apolloContext = `\nIssues:\n${allIssues.map(i => `- ${i.title} (${i.status})`).join("\n")}\n\nTest Evidence:\n${testsContext}`;
-                    const apolloResult = await this.apollo.invoke(`Verify if the milestone was completed. Milestone: ${JSON.stringify(context.currentMilestone)}${apolloContext}`, context);
-                    
-                    if (!apolloResult.success || !apolloResult.data) throw new Error("Apollo failed to verify");
 
-                    const verification = apolloResult.data;
-                    const milestoneRecord = this.milestoneRepo.getPendingByProject(projectId) || this.milestoneRepo.get(milestoneId)!;
-                    const attemptNum = (milestoneRecord.verificationAttempts || 0) + 1;
-
-                    const verificationRunId = crypto.randomUUID();
-                    this.verificationRepo.create({
-                        id: verificationRunId,
-                        milestoneId,
-                        attemptNumber: attemptNum,
-                        status: verification.status,
-                        evidence: JSON.stringify(verification.evidence),
-                        failures: JSON.stringify(verification.failures || []),
-                        requiredFixes: JSON.stringify(verification.requiredFixes || [])
-                    });
-
-                    this.milestoneRepo.incrementVerificationAttempts(milestoneId);
-
-                    if (verification.status === "PASS") {
-                        console.log(`[APOLLO] PASS`);
-                        state.transition("COMPLETED");
-                        this.milestoneRepo.updateStatus(milestoneId, "COMPLETED");
-                        
-                        allIssues.forEach(issue => this.issueRepo.updateStatus(issue.id, "VERIFIED"));
-                        
-                        running = false;
-                    } else {
-                        console.log(`[APOLLO] FAIL. Required fixes: ${verification.requiredFixes?.join(", ")}`);
-                        context.verificationFeedback = verification;
-                        
-                        if (attemptNum >= MAX_VERIFICATION_ATTEMPTS) {
-                            console.log(`[ORCHESTRATOR] Reached MAX_VERIFICATION_ATTEMPTS (${MAX_VERIFICATION_ATTEMPTS}). Stopping safely.`);
-                            state.transition("FAILED");
-                            this.milestoneRepo.updateStatus(milestoneId, "FAILED");
-                            running = false;
-                            break;
-                        }
-
-                        if (verification.requiredFixes) {
-                            for (const fix of verification.requiredFixes) {
-                                const exists = allIssues.some(i => i.title === fix);
-                                if (!exists) {
-                                    console.log(`[ISSUE] Creating FIX issue: ${fix}`);
-                                    this.issueRepo.create({
-                                        id: crypto.randomUUID(),
-                                        projectId,
-                                        milestoneId,
-                                        title: fix,
-                                        description: `Required fix identified by Apollo: ${fix}`,
-                                        type: "FIX",
-                                        priority: "HIGH",
-                                        status: "READY", // Make it ready immediately
-                                        fixAttempts: 0,
-                                        attemptCount: 0,
-                                        sourceVerificationId: verificationRunId
-                                    });
-                                }
+                    if (verification.requiredFixes) {
+                        for (const fix of verification.requiredFixes) {
+                            const exists = allIssues.some(i => i.title === fix);
+                            if (!exists) {
+                                console.log(`[ISSUE] Creating FIX issue: ${fix}`);
+                                this.issueRepo.create({
+                                    id: crypto.randomUUID(),
+                                    projectId,
+                                    milestoneId,
+                                    title: fix,
+                                    description: `Required fix identified by Apollo: ${fix}`,
+                                    type: "FIX",
+                                    priority: "HIGH",
+                                    status: "READY",
+                                    fixAttempts: 0,
+                                    attemptCount: 0,
+                                    assignedRole: "developer"
+                                });
                             }
                         }
-                        
-                        state.transition("FAILED");
                     }
                 }
             }

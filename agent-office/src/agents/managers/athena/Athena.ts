@@ -12,7 +12,9 @@ export class Athena extends BaseAgent<AthenaOutput> {
     }
 
     getSystemPrompt(context: AgentContext): string {
-        return ATHENA_SYSTEM_PROMPT;
+        return context.historicalContext ? `${ATHENA_SYSTEM_PROMPT}
+
+${context.historicalContext}` : ATHENA_SYSTEM_PROMPT;
     }
 
     parseResponse(response: string): AthenaOutput {

@@ -37,7 +37,7 @@ class DeterministicFailureProvider implements ModelProvider {
             
             mockContent = JSON.stringify({ 
                 type: "SCHEDULE", 
-                tasks: [{ issueId, workerRole: "developer", task: "Write API" }] 
+                contracts: [{ issueId, receiver: "developer", objective: "Write API" , acceptanceCriteria: [], constraints: [], contractType: "TASK" as const }] 
             });
         } 
         else if (request.systemPrompt.includes("You are Apollo")) {
@@ -110,15 +110,14 @@ async function main() {
     ];
     const workerFactory = new WorkerFactory(router, runRepo, tools);
 
+    const testResultRepo = new (require("./persistence/repositories/TestResultRepository").TestResultRepository)();
+    const artifactChangeRepo = new (require("./persistence/repositories/ArtifactChangeRepository").ArtifactChangeRepository)();
+    const codeReviewRepo = new (require("./persistence/repositories/CodeReviewRepository").CodeReviewRepository)();
+    const reviewer = new (require("./agents/managers/reviewer/Reviewer").Reviewer)(router, runRepo);
+
     const orchestrator = new Orchestrator(
-        athena,
-        ares,
-        apollo,
-        workerFactory,
-        projectRepo,
-        milestoneRepo,
-        issueRepo,
-        verificationRepo
+        athena, ares, apollo, reviewer, workerFactory,
+        projectRepo, milestoneRepo, issueRepo, verificationRepo, testResultRepo, artifactChangeRepo, codeReviewRepo
     );
 
     const projectId = crypto.randomUUID();

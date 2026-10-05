@@ -3,4 +3,5 @@ export interface AgentResult<T = any> {
     data?: T;
     error?: string;
     rawOutput?: string;
+    runId?: string;
 }

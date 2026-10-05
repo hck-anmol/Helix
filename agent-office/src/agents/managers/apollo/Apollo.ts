@@ -12,7 +12,9 @@ export class Apollo extends BaseAgent<ApolloOutput> {
     }
 
     getSystemPrompt(context: AgentContext): string {
-        return APOLLO_SYSTEM_PROMPT;
+        return context.historicalContext ? `${APOLLO_SYSTEM_PROMPT}
+
+${context.historicalContext}` : APOLLO_SYSTEM_PROMPT;
     }
 
     parseResponse(response: string): ApolloOutput {

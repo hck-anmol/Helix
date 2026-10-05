@@ -75,11 +75,35 @@ db.exec(`
         FOREIGN KEY(milestoneId) REFERENCES milestones(id)
     );
 
+    CREATE TABLE IF NOT EXISTS agent_contracts (
+        id TEXT PRIMARY KEY,
+        projectId TEXT,
+        milestoneId TEXT,
+        issueId TEXT,
+        sender TEXT,
+        receiver TEXT,
+        contractType TEXT,
+        objective TEXT,
+        inputs TEXT,
+        acceptanceCriteria TEXT,
+        constraints TEXT,
+        contextHash TEXT,
+        status TEXT,
+        resultStatus TEXT,
+        resultSummary TEXT,
+        resultPayload TEXT,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        completedAt DATETIME,
+        FOREIGN KEY(projectId) REFERENCES projects(id),
+        FOREIGN KEY(milestoneId) REFERENCES milestones(id)
+    );
+
     CREATE TABLE IF NOT EXISTS agent_runs (
         id TEXT PRIMARY KEY,
         projectId TEXT,
         milestoneId TEXT,
         issueId TEXT,
+        contractId TEXT,
         agentId TEXT,
         role TEXT,
         model TEXT,
@@ -87,6 +111,8 @@ db.exec(`
         phase TEXT,
         status TEXT,
         output TEXT,
+        contextHash TEXT,
+        duration INTEGER,
         startedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         completedAt DATETIME,
         error TEXT

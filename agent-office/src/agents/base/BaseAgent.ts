@@ -33,6 +33,7 @@ export abstract class BaseAgent<T = any> {
 
             const parsed = this.parseResponse(response.content);
             
+            const duration = Date.now() - startTime;
             this.runRepo.create({
                 id: runId,
                 projectId: context.projectId,
@@ -44,11 +45,13 @@ export abstract class BaseAgent<T = any> {
                 task: "",
                 phase: "EXECUTION",
                 status: "SUCCESS",
-                output: JSON.stringify(parsed)
+                output: JSON.stringify(parsed),
+                contextHash: context.contextHash,
+                duration: duration
             });
 
-            console.log(`[AGENT:${this.role}] Completed in ${Date.now() - startTime}ms.`);
-            return { success: true, data: parsed, rawOutput: response.content };
+            console.log(`[AGENT:${this.role}] Completed in ${duration}ms.`);
+            return { success: true, data: parsed, rawOutput: response.content, runId };
         } catch (error: any) {
             console.error(`[AGENT:${this.role}] Error:`, error.message);
             this.runRepo.create({
@@ -62,9 +65,12 @@ export abstract class BaseAgent<T = any> {
                 task: "",
                 phase: "EXECUTION",
                 status: "FAILED",
-                output: error.message
+                output: error.message,
+                contextHash: context.contextHash,
+                duration: Date.now() - startTime,
+                error: error.message
             });
-            return { success: false, error: error.message };
+            return { success: false, error: error.message, runId };
         }
     }
 }

@@ -38,7 +38,7 @@ export class Worker extends BaseAgent<WorkerOutput> {
 
     constructor(
         role: keyof typeof config.models,
-        private taskDescription: string,
+        private contract: any,
         private tools: Tool[],
         router: ModelRouter,
         runRepo: AgentRunRepository
@@ -57,8 +57,8 @@ ${this.skillInstruction}
 You have access to the following tools:
 ${toolDescriptions}
 
-You are working on this task:
-${this.taskDescription}
+${context.historicalContext ? context.historicalContext + '\n\n' : ''}You are working on this task:
+Objective:\n${this.contract.objective}\n\nAcceptance Criteria:\n${this.contract.acceptanceCriteria.join("\n")}\n\nConstraints:\n${this.contract.constraints.join("\n")}
 
 You can request to execute tools by providing them in your JSON output.
 If you are a tester, determine the appropriate test command (e.g. \`npm test\` or \`node <test-file>\`).
@@ -89,7 +89,7 @@ Output strictly JSON matching this schema:
     }
 
     async executeTask(context: AgentContext): Promise<AgentResult<WorkerOutput>> {
-        const result = await this.invoke(this.taskDescription, context);
+        const result = await this.invoke(this.contract.objective, context);
         if (result.success && result.data) {
             result.data.testsRun = result.data.testsRun || [];
             
@@ -121,7 +121,7 @@ Output strictly JSON matching this schema:
             }
 
             // Update AgentRun output in DB so we can query testsRun later
-            this.runRepo.updateOutput(this.id, JSON.stringify(result.data));
+            this.runRepo.updateOutput(result.runId!, JSON.stringify(result.data));
         }
         return result;
     }

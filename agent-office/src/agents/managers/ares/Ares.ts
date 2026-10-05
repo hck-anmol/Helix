@@ -12,7 +12,9 @@ export class Ares extends BaseAgent<AresOutput> {
     }
 
     getSystemPrompt(context: AgentContext): string {
-        return ARES_SYSTEM_PROMPT;
+        return context.historicalContext ? `${ARES_SYSTEM_PROMPT}
+
+${context.historicalContext}` : ARES_SYSTEM_PROMPT;
     }
 
     parseResponse(response: string): AresOutput {

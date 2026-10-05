@@ -11,7 +11,7 @@ export class WorkerFactory {
         private availableTools: Tool[]
     ) {}
 
-    createWorker(role: keyof typeof config.models, task: string): Worker {
+    createWorker(role: keyof typeof config.models, contract: any): Worker {
         // Simple permission assignment based on role
         let allowedTools: Tool[] = [];
         if (role === "developer") {
@@ -21,6 +21,6 @@ export class WorkerFactory {
         } else {
             allowedTools = this.availableTools.filter(t => ["read_file", "list_files"].includes(t.name));
         }
-        return new Worker(role, task, allowedTools, this.router, this.runRepo);
+        return new Worker(role, contract, allowedTools, this.router, this.runRepo);
     }
 }

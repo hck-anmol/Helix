@@ -19,4 +19,9 @@ export class ArtifactChangeRepository {
         const stmt = db.prepare(`SELECT * FROM artifact_changes WHERE milestoneId = ?`);
         return stmt.all(milestoneId) as ArtifactChange[];
     }
+
+    listByIssue(issueId: string): ArtifactChange[] {
+        const stmt = db.prepare(`SELECT * FROM artifact_changes WHERE issueId = ?`);
+        return stmt.all(issueId) as ArtifactChange[];
+    }
 }

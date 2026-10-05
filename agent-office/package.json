@@ -12,7 +12,13 @@
     "demo-testing-failure": "ts-node src/demo-testing-failure.ts",
     "test": "ts-node tests/run.ts",
     "demo-review": "ts-node src/demo-review.ts",
-    "demo-review-failure": "ts-node src/demo-review-failure.ts"
+    "demo-review-failure": "ts-node src/demo-review-failure.ts",
+    "context": "ts-node src/context-cli.ts",
+    "demo-context": "ts-node src/demo-context.ts",
+    "demo-contracts": "ts-node src/demo-contracts.ts",
+    "demo-contract-failure": "ts-node src/demo-contract-failure.ts",
+    "demo-parallel": "ts-node src/demo-parallel.ts",
+    "demo-parallel-failure": "ts-node src/demo-parallel-failure.ts"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

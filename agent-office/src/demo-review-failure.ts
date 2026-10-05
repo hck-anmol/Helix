@@ -94,19 +94,21 @@ async function main() {
         }
     };
 
-    ares.invoke = async (prompt) => {
-        const readyIssueMatch = prompt.match(/READY Issues:\n([\s\S]*?)\nProvide workers/);
-        const tasks = [];
-        if (readyIssueMatch && readyIssueMatch[1]) {
-            const lines = readyIssueMatch[1].trim().split("\n");
-            for (const line of lines) {
-                const match = line.match(/- \[([^\]]+)\]/);
-                if (match && match[1]) {
-                    tasks.push({ issueId: match[1], workerRole: "developer" as any, task: "Execute" });
+
+        ares.invoke = async (prompt: string, context?: any) => {
+        // Handle new ParallelExecutor prompt format: "Schedule this READY issue: ISSUE-001..."
+        if (prompt.startsWith("Schedule this READY issue:")) {
+            return {
+                success: true,
+                data: {
+                    type: "SCHEDULE",
+                    contracts: [
+                        { receiver: "developer" as any, objective: "Execute task", acceptanceCriteria: [], constraints: [], contractType: "TASK" as const }
+                    ]
                 }
-            }
+            };
         }
-        return { success: true, data: { type: "SCHEDULE", tasks } };
+        return { success: true, data: { type: "SCHEDULE", contracts: [] } };
     };
 
     let reviewAttempt = 0;
@@ -143,7 +145,7 @@ async function main() {
 
     // Mock workers to actually write files and run tests
     const shellTool = new ShellTool();
-    workerFactory.createWorker = (role, task) => {
+    workerFactory.createWorker = (role, contract) => {
         const workerId = crypto.randomUUID();
         return {
             id: workerId,
@@ -159,7 +161,7 @@ async function main() {
                     agentId: workerId,
                     role: role,
                     model: "mock-model",
-                    task: task,
+                    task: contract.objective,
                     phase: "EXECUTION",
                     status: "SUCCESS",
                     output: "mock output"

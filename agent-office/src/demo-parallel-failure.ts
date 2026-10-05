@@ -98,31 +98,20 @@ async function main() {
 
     // Mock Ares so we don't have to wait for Ollama (since models aren't downloaded locally and it takes too long to timeout)
     let aresCallCount = 0;
-    ares.invoke = async (prompt, context) => {
+    ares.invoke = async (prompt: string, context?: any) => {
         aresCallCount++;
-        // Identify which issues are READY from the prompt
-        const readyIssueMatch = prompt.match(/READY Issues:\n([\s\S]*?)\nProvide workers/);
-        const contracts: any[] = [];
-        if (readyIssueMatch && readyIssueMatch[1]) {
-            const lines = readyIssueMatch[1].trim().split("\n");
-            for (const line of lines) {
-                const match = line.match(/- \[([^\]]+)\]/);
-                if (match && match[1]) {
-                    contracts.push({
-                        issueId: match[1],
-                        receiver: "developer" as any,
-                        objective: "Execute task"
-                    , acceptanceCriteria: [], constraints: [], contractType: "TASK" as const });
+        if (prompt.startsWith("Schedule this READY issue:")) {
+            return {
+                success: true,
+                data: {
+                    type: "SCHEDULE",
+                    contracts: [
+                        { receiver: "developer" as any, objective: "Execute task", acceptanceCriteria: [], constraints: [], contractType: "TASK" as const }
+                    ]
                 }
-            }
+            };
         }
-        return {
-            success: true,
-            data: {
-                type: "SCHEDULE",
-                contracts
-            }
-        };
+        return { success: true, data: { type: "SCHEDULE", contracts: [] } };
     };
 
     // Mock workers to instantly succeed
@@ -142,7 +131,21 @@ async function main() {
     };
 
     // Mock Apollo to pass
+    let apolloCallCount = 0;
     apollo.invoke = async (prompt, context) => {
+        apolloCallCount++;
+        if (apolloCallCount === 1) {
+            return {
+                success: true,
+                data: {
+                    type: "VERIFICATION",
+                    status: "FAIL",
+                    evidence: ["Tests failed"],
+                    failures: ["Server crashed"],
+                    requiredFixes: ["Fix server crash"]
+                }
+            };
+        }
         return {
             success: true,
             data: {
