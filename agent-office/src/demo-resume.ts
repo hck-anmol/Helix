@@ -45,10 +45,10 @@ class DeterministicResumeProvider implements ModelProvider {
             const issueId = readyIssueMatch ? readyIssueMatch[1] : crypto.randomUUID();
             mockContent = JSON.stringify({ 
                 type: "SCHEDULE", 
-                tasks: [{ issueId, workerRole: "developer", task: "Write script" }] 
+                contracts: [{ receiver: "developer", contractType: "TASK", objective: "Write script", acceptanceCriteria: [], constraints: [] }] 
             });
         } 
-        else if (request.systemPrompt.includes("developer")) {
+        else if (request.systemPrompt.startsWith("You are developer") || request.systemPrompt.includes("You are developer")) {
             this.developerAttempts++;
             if (this.developerAttempts === 1) {
                 console.log("\n>>> SIMULATING FATAL PROCESS CRASH DURING WORKER EXECUTION <<<\n");
@@ -61,7 +61,7 @@ class DeterministicResumeProvider implements ModelProvider {
                 });
             }
         }
-        else if (request.systemPrompt.includes("Reviewer")) {
+        else if (request.prompt.includes("Please review these artifacts")) {
             mockContent = JSON.stringify({ 
                 status: "PASS", 
                 summary: "Looks good", 
@@ -78,6 +78,8 @@ class DeterministicResumeProvider implements ModelProvider {
             });
         }
         else {
+            console.log("UNMATCHED PROMPT:", request.prompt);
+            console.log("UNMATCHED SYSTEM PROMPT:", request.systemPrompt);
             mockContent = JSON.stringify({ status: "COMPLETED", message: "Done" });
         }
 
@@ -100,6 +102,19 @@ async function main() {
     const artifactChangeRepo = new ArtifactChangeRepository();
     const codeReviewRepo = new CodeReviewRepository();
     const checkpointRepo = new CheckpointRepository();
+    
+    // Create an interruption hook on CheckpointRepository
+    const originalCreateCheckpoint = checkpointRepo.create.bind(checkpointRepo);
+    let crashTriggered = false;
+    checkpointRepo.create = (checkpoint) => {
+        originalCreateCheckpoint(checkpoint);
+        if (checkpoint.checkpointType === "WORKER_STARTED" && !crashTriggered) {
+            crashTriggered = true;
+            console.log("CHECKPOINT CREATED");
+            console.log("EXECUTION INTERRUPTED");
+            throw new Error("SimulatedCrash");
+        }
+    };
 
     const athena1 = new Athena(router1, runRepo);
     const ares1 = new Ares(router1, runRepo);
@@ -128,20 +143,12 @@ async function main() {
     const workspaceRoot = path.join(config.workspaceRoot, projectId);
     fs.mkdirSync(workspaceRoot, { recursive: true });
 
-    // Start it. It will crash during the worker.
-    try {
-        await orchestrator1.runProject(projectId);
-    } catch (e) {
-        // Expected to throw from simulated crash handling? Actually Orchestrator swallows it and halts.
-    }
-
-    // Because we used an exception to simulate a process crash, BaseAgent caught it and marked it FAILED.
-    // We manually set it back to RUNNING to correctly simulate a real hardware/process crash.
-    const { db } = require("./persistence/database");
-    db.prepare(`UPDATE agent_runs SET status = 'RUNNING' WHERE projectId = ? AND role = 'developer'`).run(projectId);
-    fs.writeFileSync(path.join(workspaceRoot, "hello.js"), "// partial code...");
+    // Start it. It will hit the WORKER_STARTED checkpoint and throw SimulatedCrash
+    await orchestrator1.runProject(projectId);
 
     console.log("\n=== PHASE 2: RESUMING ORCHESTRATOR FROM CRASH ===");
+    console.log("NEW ORCHESTRATOR");
+    console.log("RESUMING FROM CHECKPOINT");
     
     // We reuse the deterministic provider instance so attempt count correctly passes 1
     const router2 = new ModelRouter(provider1);
@@ -160,10 +167,25 @@ async function main() {
 
     // Call resume exactly once
     await orchestrator2.resumeProject(projectId);
-    
+    console.log("PROJECT COMPLETED");
+
     console.log("\n=== PHASE 3: VERIFY IDEMPOTENCY ===");
     await orchestrator2.resumeProject(projectId);
+    console.log("IDEMPOTENT RESUME VERIFIED");
 
+    // Verify Checkpoint Persistence
+    const { db } = require("./persistence/database");
+    const checkpoints = db.prepare("SELECT * FROM checkpoints WHERE projectId = ?").all(projectId);
+    if (checkpoints.length === 0) {
+        throw new Error("Checkpoint persistence failed: 0 checkpoints found.");
+    }
+    
+    const workerStartedCheckpoint = checkpoints.find((c: any) => c.checkpointType === "WORKER_STARTED");
+    if (!workerStartedCheckpoint) {
+        throw new Error("Checkpoint persistence failed: WORKER_STARTED checkpoint not found.");
+    }
+
+    console.log(`\n=== CHECKPOINT PERSISTENCE VERIFIED (${checkpoints.length} checkpoints found) ===`);
     console.log("\n=== DEMO RESUME COMPLETE ===");
 }
 

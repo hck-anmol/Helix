@@ -100,21 +100,16 @@ async function main() {
     let aresCallCount = 0;
     ares.invoke = async (prompt, context) => {
         aresCallCount++;
-        // Identify which issues are READY from the prompt
-        const readyIssueMatch = prompt.match(/READY Issues:\n([\s\S]*?)\nProvide workers/);
         const contracts: any[] = [];
-        if (readyIssueMatch && readyIssueMatch[1]) {
-            const lines = readyIssueMatch[1].trim().split("\n");
-            for (const line of lines) {
-                const match = line.match(/- \[([^\]]+)\]/);
-                if (match && match[1]) {
-                    contracts.push({
-                        issueId: match[1],
-                        receiver: "developer" as any,
-                        objective: "Execute task"
-                    , acceptanceCriteria: [], constraints: [], contractType: "TASK" as const });
-                }
-            }
+        const match = prompt.match(/Schedule this READY issue: (.*?) \(Role:/);
+        if (match && match[1]) {
+            contracts.push({
+                receiver: "developer" as any,
+                objective: "Execute task",
+                acceptanceCriteria: [], 
+                constraints: [], 
+                contractType: "TASK" as const
+            });
         }
         return {
             success: true,

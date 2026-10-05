@@ -34,7 +34,8 @@ export class ParallelExecutor {
         private verificationRepo: VerificationRepository,
         private workerFactory: WorkerFactory,
         private reviewer: Reviewer,
-        private ares: Ares
+        private ares: Ares,
+        private checkpointRepo?: any
     ) {}
 
     async executeMilestone(context: AgentContext) {
@@ -58,13 +59,13 @@ export class ParallelExecutor {
             // Wait, what if we have active tasks, but no READY issues?
             // We just wait for an active task to finish.
             
-            while (this.runningTasks.size < this.maxConcurrency && readyIssues.length > 0) {
-                // Claim up to MAX_CONCURRENCY tasks
+            let issuesExamined = 0;
+            const numReady = readyIssues.length;
+            while (this.runningTasks.size < this.maxConcurrency && issuesExamined < numReady) {
                 const issue = readyIssues.shift()!;
+                issuesExamined++;
                 
-                // Implement safe artifact overlap check here if necessary
                 if (!this.isSafeToRun(issue)) {
-                    // Put it back and skip to next
                     readyIssues.push(issue); // We can't run this right now.
                     continue;
                 }
@@ -170,6 +171,17 @@ export class ParallelExecutor {
         this.issueRepo.updateStatus(issue.id, "RUNNING");
         this.contractRepo.updateStatus(contractId, "RUNNING");
 
+        if (this.checkpointRepo) {
+            this.checkpointRepo.create({
+                id: crypto.randomUUID(), projectId, milestoneId, issueId: issue.id,
+                phase: "EXECUTING", checkpointType: "ISSUE_STARTED"
+            });
+            this.checkpointRepo.create({
+                id: crypto.randomUUID(), projectId, milestoneId, issueId: issue.id,
+                phase: "EXECUTING", checkpointType: "WORKER_STARTED", metadata: { workerRole: aresContract.receiver }
+            });
+        }
+
         let enrichedTask = aresContract.objective;
         
         (context as any).currentContractId = contractId;
@@ -210,11 +222,24 @@ export class ParallelExecutor {
             this.contractRepo.reject(contractId, workerResult.error || workerResult.data?.message || "Failed");
             this.issueRepo.updateStatus(issue.id, "FAILED");
             this.issueRepo.incrementFixAttempts(issue.id);
+            if (this.checkpointRepo) {
+                this.checkpointRepo.create({
+                    id: crypto.randomUUID(), projectId, milestoneId, issueId: issue.id,
+                    phase: "EXECUTING", checkpointType: "WORKER_FAILED", metadata: { workerRole: aresContract.receiver, error: workerResult.error || workerResult.data?.message }
+                });
+            }
             return; // We stop execution for this issue. FIX will be generated.
         }
         
         console.log(`[WORKER:${aresContract.receiver}] Success`);
         this.contractRepo.complete(contractId, "PASS", workerResult.data?.summary || "Success", workerResult.data);
+        
+        if (this.checkpointRepo) {
+            this.checkpointRepo.create({
+                id: crypto.randomUUID(), projectId, milestoneId, issueId: issue.id,
+                phase: "EXECUTING", checkpointType: "WORKER_COMPLETED", metadata: { workerRole: aresContract.receiver }
+            });
+        }
         
         // REVIEW
         let reviewPassed = true;
@@ -231,7 +256,18 @@ export class ParallelExecutor {
             this.contractRepo.updateStatus(reviewContractId, "RUNNING");
             
             console.log(`[REVIEWER] Inspecting ${artifactChanges.length} changes...`);
-            const reviewPrompt = `Task:\n${enrichedTask}\n\nChanges made by worker:\n${reviewContract.inputs.changes.join("\n")}\n\nPlease review these artifacts in the workspace.`;
+            let fileContents = "";
+            for (const change of artifactChanges) {
+                if (change.changeType !== "DELETED") {
+                    try {
+                        const content = require('fs').readFileSync(require('path').join(context.workspaceRoot, change.path), 'utf8');
+                        fileContents += `\n--- ${change.path} ---\n${content}\n`;
+                    } catch (e) {
+                        fileContents += `\n--- ${change.path} ---\n(Could not read file)\n`;
+                    }
+                }
+            }
+            const reviewPrompt = `Task:\n${enrichedTask}\n\nChanges made by worker:\n${reviewContract.inputs.changes.join("\n")}\n\nFile Contents:\n${fileContents}\n\nPlease review these artifacts.`;
             
             (context as any).currentContractId = reviewContractId;
             const reviewCtx = builder.build(projectId, milestoneId, issue.id, { maxAgentRuns: 2, maxArtifactChanges: 5 });
@@ -271,12 +307,16 @@ export class ParallelExecutor {
                     this.contractRepo.complete(reviewContractId, "PASS", "LGTM", reviewResult.data);
                 }
             } else {
-                console.error(`[REVIEWER] Failed to execute code review`);
+                console.error(`[REVIEWER] Failed to execute code review: ${reviewResult.error}`);
                 this.contractRepo.reject(reviewContractId, "Review execution failed");
+                reviewPassed = false;
+                this.issueRepo.updateStatus(issue.id, "FAILED");
+                this.issueRepo.incrementFixAttempts(issue.id);
             }
         }
         
         // TEST
+        let testPassed = true;
         if (reviewPassed && worker.role !== "tester") {
             const testContractId = crypto.randomUUID();
             const testContract = {
@@ -305,11 +345,15 @@ export class ParallelExecutor {
                 this.contractRepo.complete(testContractId, "PASS", "Tests Executed", testResult.data);
             } else {
                 this.contractRepo.reject(testContractId, testResult.error || "Test execution failed");
+                testPassed = false;
             }
         }
         
-        if (reviewPassed) {
+        if (reviewPassed && testPassed) {
             this.issueRepo.updateStatus(issue.id, "RESOLVED");
+        } else if (!testPassed) {
+            this.issueRepo.updateStatus(issue.id, "FAILED");
+            this.issueRepo.incrementFixAttempts(issue.id);
         }
     }
 }

@@ -4,7 +4,7 @@ import { IssueRepository } from "../src/persistence/repositories/IssueRepository
 import { ProjectRepository } from "../src/persistence/repositories/ProjectRepository";
 import { MilestoneRepository } from "../src/persistence/repositories/MilestoneRepository";
 
-function runTests() {
+export async function run() {
     console.log("Running IssueRepository Tests...");
 
     const projectRepo = new ProjectRepository();
@@ -70,5 +70,3 @@ function runTests() {
 
     console.log("IssueRepository tests passed!");
 }
-
-runTests();

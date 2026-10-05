@@ -46,6 +46,10 @@ export class Orchestrator {
         private checkpointRepo?: any,
         private runRepoParam?: any
     ) {
+        if (!this.checkpointRepo) {
+            const { CheckpointRepository } = require("../persistence/repositories/CheckpointRepository");
+            this.checkpointRepo = new CheckpointRepository();
+        }
 
         this.contextBuilder = new ContextBuilder(
             projectRepo, milestoneRepo, issueRepo, this.runRepo,
@@ -64,18 +68,54 @@ export class Orchestrator {
         context.historicalContext = serialized;
         context.contextHash = ContextSerializer.hash(serialized);
     }
-
-
-    async resumeProject(projectId: string) {
-        console.log("[ORCHESTRATOR] Resuming project " + projectId);
-        // Fallback to runProject for now in ParallelExecutor branch
-        return this.runProject(projectId);
+    
+    private hasUnresolvedExecutionFailures(milestoneId: string): boolean {
+        const allIssues = this.issueRepo.listByMilestone(milestoneId);
+        return allIssues.some(i => i.status === "FAILED");
     }
 
-    async runProject(projectId: string) {
 
+    async resumeProject(projectId: string): Promise<void> {
+        console.log("[ORCHESTRATOR] Resuming project " + projectId);
+        
         const project = this.projectRepo.get(projectId);
         if (!project) throw new Error("Project not found");
+
+        const existingMilestone = this.milestoneRepo.getLatestByProject(projectId);
+        if (!existingMilestone) {
+            return this.runProject(projectId);
+        }
+
+        if (existingMilestone.status === "COMPLETED") {
+            console.log("[ORCHESTRATOR] Project is already COMPLETED. Idempotent resume.");
+            return;
+        }
+
+        // Fix stale issues
+        const issues = this.issueRepo.listByMilestone(existingMilestone.id);
+        for (const issue of issues) {
+            if (issue.status === "RUNNING" || issue.status === "CLAIMED") {
+                console.log(`[ORCHESTRATOR] Marking stale issue ${issue.id} as PENDING`);
+                this.issueRepo.updateStatus(issue.id, "PENDING");
+            }
+        }
+        
+        // Also fix stale contracts
+        const db = require("../persistence/database").db;
+        db.prepare(`UPDATE agent_contracts SET status = 'FAILED' WHERE milestoneId = ? AND status IN ('RUNNING', 'READY', 'CREATED')`).run(existingMilestone.id);
+
+        return this._runExecutionLoop(projectId, existingMilestone.id);
+    }
+
+    async runProject(projectId: string): Promise<void> {
+        const project = this.projectRepo.get(projectId);
+        if (!project) throw new Error("Project not found");
+
+        const existingMilestone = this.milestoneRepo.getLatestByProject(projectId);
+        if (existingMilestone && existingMilestone.status !== 'FAILED' && existingMilestone.status !== 'COMPLETED') {
+            console.log("[ORCHESTRATOR] Milestone exists. Calling resumeProject instead.");
+            return this.resumeProject(projectId);
+        }
 
         const context: AgentContext = {
             projectId,
@@ -127,10 +167,43 @@ export class Orchestrator {
                 }
             }
 
-            context.currentMilestone = milestoneData;
-            context.currentMilestoneId = milestoneId;
-            state.transition("ACTIVE");
+            return this._runExecutionLoop(projectId, milestoneId);
+        } catch (error: any) {
+            console.error(`[ORCHESTRATOR] Error in phase ${state.phase}:`, error.message);
+            state.transition("FAILED");
+            if (this.checkpointRepo) {
+                this.checkpointRepo.create({
+                    id: crypto.randomUUID(), projectId, milestoneId: context.currentMilestoneId || "",
+                    phase: state.phase, checkpointType: "PROJECT_FAILED",
+                    metadata: { error: error.message }
+                });
+            }
+        }
+    }
 
+    private async _runExecutionLoop(projectId: string, milestoneId: string) {
+        const project = this.projectRepo.get(projectId);
+        const milestoneData = this.milestoneRepo.get(milestoneId);
+        
+        const context: AgentContext = {
+            projectId,
+            workspaceRoot: require("path").join(config.workspaceRoot, projectId),
+            projectSpec: project!.specification,
+            currentMilestoneId: milestoneId,
+            currentMilestone: milestoneData as any
+        };
+        const state = new StateMachine(milestoneData!.status as any);
+
+        try {
+            if (state.phase === "PLANNED") {
+                state.transition("ACTIVE");
+                if (this.checkpointRepo) {
+                    this.checkpointRepo.create({
+                        id: crypto.randomUUID(), projectId, milestoneId,
+                        phase: state.phase, checkpointType: "MILESTONE_STARTED"
+                    });
+                }
+            }
             
             const executor = new ParallelExecutor(
                 this.projectRepo,
@@ -144,7 +217,8 @@ export class Orchestrator {
                 this.verificationRepo,
                 this.workerFactory,
                 this.reviewer,
-                this.ares
+                this.ares,
+                this.checkpointRepo
             );
 
             let attempts = 0;
@@ -162,10 +236,15 @@ export class Orchestrator {
                 await executor.executeMilestone(context);
 
                 const allIssues = this.issueRepo.listByMilestone(milestoneId);
-                const unresolved = allIssues.filter(i => ["PENDING", "READY", "BLOCKED"].includes(i.status));
+                const unresolved = allIssues.filter(i => ["PENDING", "READY", "BLOCKED", "FAILED"].includes(i.status));
                 
                 if (unresolved.length > 0) {
-                    console.error(`[ORCHESTRATOR] Deadlock detected: ${unresolved.length} unresolved issues but 0 READY issues.`);
+                    const failedCount = unresolved.filter(i => i.status === "FAILED").length;
+                    if (failedCount > 0) {
+                        console.error(`[ORCHESTRATOR] Execution failed: ${failedCount} issues encountered unrecoverable errors.`);
+                    } else {
+                        console.error(`[ORCHESTRATOR] Deadlock detected: ${unresolved.length} unresolved issues but 0 READY issues.`);
+                    }
                     state.transition("FAILED");
                     this.milestoneRepo.updateStatus(milestoneId, "FAILED");
                     running = false;
@@ -201,6 +280,13 @@ export class Orchestrator {
                 this._injectContext(context, { maxVerificationRuns: 2, maxTestResults: 10 });
                 if (context.contextHash) this.contractRepo.updateContextHash(verificationContractId, context.contextHash);
                 
+                if (this.checkpointRepo) {
+                    this.checkpointRepo.create({
+                        id: crypto.randomUUID(), projectId, milestoneId,
+                        phase: "VERIFICATION", checkpointType: "VERIFICATION_STARTED"
+                    });
+                }
+                
                 const apolloResult = await this.apollo.invoke(`Verify if the milestone was completed. Milestone: ${JSON.stringify(context.currentMilestone)}${apolloContext}`, context);
                 
                 if (!apolloResult.success || !apolloResult.data) {
@@ -225,15 +311,31 @@ export class Orchestrator {
 
                 this.milestoneRepo.incrementVerificationAttempts(milestoneId);
 
+                if (this.checkpointRepo) {
+                    this.checkpointRepo.create({
+                        id: crypto.randomUUID(), projectId, milestoneId,
+                        phase: "VERIFICATION", checkpointType: "VERIFICATION_COMPLETED",
+                        metadata: { status: verification.status }
+                    });
+                }
+
                 if (verification.status === "PASS") {
                     console.log(`[APOLLO] PASS`);
-                    this.contractRepo.complete(verificationContractId, "PASS", "Milestone Verified", verification);
-                    state.transition("COMPLETED");
-                    this.milestoneRepo.updateStatus(milestoneId, "COMPLETED");
-                    
-                    allIssues.forEach(issue => this.issueRepo.updateStatus(issue.id, "VERIFIED"));
-                    
-                    running = false;
+                    if (this.hasUnresolvedExecutionFailures(milestoneId)) {
+                        console.error(`[ORCHESTRATOR] INVARIANT VIOLATION: Apollo passed but there are FAILED issues.`);
+                        this.contractRepo.complete(verificationContractId, "FAIL", "Apollo PASSED but issues FAILED", verification);
+                        state.transition("FAILED");
+                        this.milestoneRepo.updateStatus(milestoneId, "FAILED");
+                        running = false;
+                    } else {
+                        this.contractRepo.complete(verificationContractId, "PASS", "Milestone Verified", verification);
+                        state.transition("COMPLETED");
+                        this.milestoneRepo.updateStatus(milestoneId, "COMPLETED");
+                        
+                        allIssues.forEach(issue => this.issueRepo.updateStatus(issue.id, "VERIFIED"));
+                        
+                        running = false;
+                    }
                 } else {
                     console.log(`[APOLLO] FAIL. Required fixes: ${verification.requiredFixes?.join(", ")}`);
                     this.contractRepo.complete(verificationContractId, "FAIL", "Verification Failed", verification);
@@ -274,9 +376,28 @@ export class Orchestrator {
             const reporter = new (require("./Reporter").Reporter)(this.milestoneRepo, this.issueRepo, this.verificationRepo, this.testResultRepo, this.artifactChangeRepo, this.codeReviewRepo);
             reporter.generateMilestoneReport(projectId, milestoneId);
             
+            if (this.checkpointRepo && state.phase === "COMPLETED") {
+                this.checkpointRepo.create({
+                    id: crypto.randomUUID(), projectId, milestoneId,
+                    phase: state.phase, checkpointType: "PROJECT_COMPLETED"
+                });
+            } else if (this.checkpointRepo && state.phase === "FAILED") {
+                this.checkpointRepo.create({
+                    id: crypto.randomUUID(), projectId, milestoneId,
+                    phase: state.phase, checkpointType: "PROJECT_FAILED"
+                });
+            }
+            
         } catch (error: any) {
             console.error(`[ORCHESTRATOR] Error in phase ${state.phase}:`, error.message);
             state.transition("FAILED");
+            if (this.checkpointRepo) {
+                this.checkpointRepo.create({
+                    id: crypto.randomUUID(), projectId, milestoneId: context.currentMilestoneId || "",
+                    phase: state.phase, checkpointType: "PROJECT_FAILED",
+                    metadata: { error: error.message }
+                });
+            }
         }
         
         console.log(`[ORCHESTRATOR] Project ended with state: ${state.phase}`);

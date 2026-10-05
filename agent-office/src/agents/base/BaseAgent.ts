@@ -21,7 +21,7 @@ export abstract class BaseAgent<T = any> {
         const model = config.models[this.role];
         const systemPrompt = this.getSystemPrompt(context);
         
-        console.log(`[AGENT:${this.role}] Starting...`);
+        console.log(`[AGENT:${this.role}] Starting (MODEL USED: ${model})...`);
         const startTime = Date.now();
 
         try {

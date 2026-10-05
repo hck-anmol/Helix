@@ -9,12 +9,12 @@ export const config = {
     workspaceRoot: process.env.WORKSPACE_ROOT ? path.resolve(process.env.WORKSPACE_ROOT) : path.resolve("projects"),
     maxConcurrency: parseInt(process.env.MAX_CONCURRENCY || "2", 10),
     models: {
-        athena: "qwen3:8b",
-        ares: "qwen3:8b",
-        apollo: "qwen3:8b",
-        developer: "qwen2.5-coder:7b",
-        tester: "qwen2.5-coder:7b",
-        researcher: "qwen3:4b",
-        reviewer: "qwen3:8b"
+        athena: process.env.AGENT_MODEL_ATHENA || "qwen3:8b",
+        ares: process.env.AGENT_MODEL_ARES || "qwen3:8b",
+        apollo: process.env.AGENT_MODEL_APOLLO || "qwen3:8b",
+        developer: process.env.AGENT_MODEL_DEVELOPER || "qwen3:8b",
+        tester: process.env.AGENT_MODEL_TESTER || "qwen3:8b",
+        researcher: process.env.AGENT_MODEL_RESEARCHER || "qwen3:8b",
+        reviewer: process.env.AGENT_MODEL_REVIEWER || "qwen3:8b"
     }
 };

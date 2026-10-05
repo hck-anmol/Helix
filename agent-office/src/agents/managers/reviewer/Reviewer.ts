@@ -12,9 +12,8 @@ export class Reviewer extends BaseAgent<ReviewerOutput> {
     }
 
     getSystemPrompt(context: AgentContext): string {
-        return context.historicalContext ? `${REVIEWER_SYSTEM_PROMPT}
-
-${context.historicalContext}` : REVIEWER_SYSTEM_PROMPT;
+        const strictEnforcement = `\n\nCRITICAL: Your output MUST strictly match the Reviewer JSON schema exactly. You must output a 'status' of either "PASS" or "FAIL". Do NOT output "COMPLETED".`;
+        return context.historicalContext ? `${REVIEWER_SYSTEM_PROMPT}\n\n${context.historicalContext}${strictEnforcement}` : REVIEWER_SYSTEM_PROMPT + strictEnforcement;
     }
 
     parseResponse(response: string): ReviewerOutput {

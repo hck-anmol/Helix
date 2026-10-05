@@ -2,7 +2,7 @@ import assert from "assert";
 import { StateMachine } from "../src/orchestration/StateMachine";
 import { MilestoneStatus } from "../src/projects/Milestone";
 
-function runTests() {
+export async function run() {
     console.log("Running StateMachine Tests...");
 
     const sm = new StateMachine("PLANNED");
@@ -45,5 +45,3 @@ function runTests() {
 
     console.log("StateMachine tests passed!");
 }
-
-runTests();

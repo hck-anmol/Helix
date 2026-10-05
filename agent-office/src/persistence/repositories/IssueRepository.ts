@@ -83,7 +83,7 @@ export class IssueRepository {
         const issues = this.listByMilestone(milestoneId);
         
         for (const issue of issues) {
-            if (issue.status === 'RESOLVED' || issue.status === 'VERIFIED') continue;
+            if (issue.status === 'RESOLVED' || issue.status === 'VERIFIED' || issue.status === 'FAILED') continue;
             
             const deps = this.getDependencies(issue.id);
             let isBlocked = false;
@@ -98,7 +98,7 @@ export class IssueRepository {
 
             if (isBlocked && issue.status !== 'BLOCKED') {
                 this.updateStatus(issue.id, 'BLOCKED');
-            } else if (!isBlocked && (issue.status === 'BLOCKED' || issue.status === 'PENDING' || issue.status === 'FAILED')) {
+            } else if (!isBlocked && (issue.status === 'BLOCKED' || issue.status === 'PENDING')) {
                 this.updateStatus(issue.id, 'READY');
             }
         }
