@@ -16,6 +16,7 @@ import { ShellTool } from "./tools/ShellTools";
 import crypto from "crypto";
 
 async function main() {
+    process.env.AGENT_OFFICE_MOCK_LLM = "true";
     console.log("Initializing Agent Office - Phase 1...");
 
     const provider = new OllamaProvider(config.ollamaBaseUrl);

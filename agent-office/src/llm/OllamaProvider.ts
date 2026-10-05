@@ -59,6 +59,10 @@ export class OllamaProvider implements ModelProvider {
         }
 
         try {
+            if (process.env.AGENT_OFFICE_MOCK_LLM === 'true') {
+                throw new Error("Mock forced");
+            }
+            
             const response = await fetch(`${this.baseUrl}/api/generate`, {
                 method: "POST",
                 headers: {
@@ -105,7 +109,7 @@ export class OllamaProvider implements ModelProvider {
             // Mock responses keyed purely by role/prompt
             let mockContent = "";
             if (request.systemPrompt.includes("You are Athena")) {
-                mockContent = JSON.stringify({ type: "MILESTONE", title: "API Setup", description: "Setup REST API with health check", acceptanceCriteria: ["Returns 200 on /health"], budget: 3 });
+                mockContent = JSON.stringify({ type: "MILESTONE", title: "API Setup", description: "Setup REST API with health check", acceptanceCriteria: ["Returns 200 on /health"], budget: 3, suggestedTasks: [{ title: "Implement API", type: "TASK" }] });
             } else if (request.systemPrompt.includes("You are Ares")) {
                 mockContent = JSON.stringify({ type: "SCHEDULE", contracts: [{ receiver: "developer", contractType: "TASK", objective: "Write index.js", acceptanceCriteria: [], constraints: [] }, { receiver: "tester", contractType: "TASK", objective: "Write test.js", acceptanceCriteria: [], constraints: [] }] });
             } else if (request.systemPrompt.includes("You are Apollo")) {
