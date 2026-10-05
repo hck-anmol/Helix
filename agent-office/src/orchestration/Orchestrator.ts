@@ -21,6 +21,7 @@ import { ContextBuilder } from "../context/ContextBuilder";
 import { ContextSerializer } from "../context/ContextSerializer";
 import { AgentRunRepository } from "../persistence/repositories/AgentRunRepository";
 import { AgentContractRepository } from "../persistence/repositories/AgentContractRepository";
+import { eventEmitter } from "../observability/EventEmitter";
 
 const MAX_VERIFICATION_ATTEMPTS = 3;
 const MAX_FIX_ATTEMPTS_PER_ISSUE = 2;
@@ -77,6 +78,7 @@ export class Orchestrator {
 
     async resumeProject(projectId: string): Promise<void> {
         console.log("[ORCHESTRATOR] Resuming project " + projectId);
+        eventEmitter.emit({ projectId, eventType: "PROJECT_RESUMED", message: "Resuming project" });
         
         const project = this.projectRepo.get(projectId);
         if (!project) throw new Error("Project not found");
@@ -124,6 +126,7 @@ export class Orchestrator {
         };
 
         console.log(`[ORCHESTRATOR] Starting project: ${project.name}`);
+        eventEmitter.emit({ projectId, eventType: "PROJECT_STARTED", message: `Starting project: ${project.name}` });
         const state = new StateMachine("PLANNED");
         const scheduler = new Scheduler(this.issueRepo);
 
@@ -148,6 +151,7 @@ export class Orchestrator {
                 budget: milestoneData.budget,
                 verificationAttempts: 0
             });
+            eventEmitter.emit({ projectId, milestoneId, eventType: "MILESTONE_STARTED", message: `Milestone created: ${milestoneData.title}` });
 
             // Create suggested tasks as PENDING issues
             if (milestoneData.suggestedTasks) {
@@ -177,7 +181,9 @@ export class Orchestrator {
                     phase: state.phase, checkpointType: "PROJECT_FAILED",
                     metadata: { error: error.message }
                 });
+                eventEmitter.emit({ projectId, milestoneId: context.currentMilestoneId || "", eventType: "CHECKPOINT_CREATED", message: "PROJECT_FAILED checkpoint" });
             }
+            eventEmitter.emit({ projectId, milestoneId: context.currentMilestoneId || "", eventType: "PROJECT_FAILED", message: error.message });
         }
     }
 
@@ -202,6 +208,7 @@ export class Orchestrator {
                         id: crypto.randomUUID(), projectId, milestoneId,
                         phase: state.phase, checkpointType: "MILESTONE_STARTED"
                     });
+                    eventEmitter.emit({ projectId, milestoneId, eventType: "CHECKPOINT_CREATED", message: "MILESTONE_STARTED checkpoint" });
                 }
             }
             
@@ -242,8 +249,10 @@ export class Orchestrator {
                     const failedCount = unresolved.filter(i => i.status === "FAILED").length;
                     if (failedCount > 0) {
                         console.error(`[ORCHESTRATOR] Execution failed: ${failedCount} issues encountered unrecoverable errors.`);
+                        eventEmitter.emit({ projectId, milestoneId, eventType: "EXECUTION_FAILED", message: `${failedCount} issues encountered unrecoverable errors.` });
                     } else {
                         console.error(`[ORCHESTRATOR] Deadlock detected: ${unresolved.length} unresolved issues but 0 READY issues.`);
+                        eventEmitter.emit({ projectId, milestoneId, eventType: "DEADLOCK_DETECTED", message: `${unresolved.length} unresolved issues but 0 READY issues.` });
                     }
                     state.transition("FAILED");
                     this.milestoneRepo.updateStatus(milestoneId, "FAILED");
@@ -256,6 +265,7 @@ export class Orchestrator {
                 this.milestoneRepo.updateStatus(milestoneId, "VERIFYING");
                 console.log(`[ORCHESTRATOR] Phase: VERIFICATION`);
                 console.log(`[APOLLO] Verifying milestone...`);
+                eventEmitter.emit({ projectId, milestoneId, eventType: "VERIFICATION_STARTED", message: "Verifying milestone" });
                 
                 const testRuns = this.testResultRepo.listByMilestone(milestoneId);
                 const testsContext = testRuns.map(tr => `[Test] ${tr.command} | Exit: ${tr.exitCode} | Status: ${tr.status}\nSTDOUT: ${tr.stdout}\nSTDERR: ${tr.stderr}`).join("\n\n");
@@ -285,6 +295,7 @@ export class Orchestrator {
                         id: crypto.randomUUID(), projectId, milestoneId,
                         phase: "VERIFICATION", checkpointType: "VERIFICATION_STARTED"
                     });
+                    eventEmitter.emit({ projectId, milestoneId, eventType: "CHECKPOINT_CREATED", message: "VERIFICATION_STARTED checkpoint" });
                 }
                 
                 const apolloResult = await this.apollo.invoke(`Verify if the milestone was completed. Milestone: ${JSON.stringify(context.currentMilestone)}${apolloContext}`, context);
@@ -317,6 +328,7 @@ export class Orchestrator {
                         phase: "VERIFICATION", checkpointType: "VERIFICATION_COMPLETED",
                         metadata: { status: verification.status }
                     });
+                    eventEmitter.emit({ projectId, milestoneId, eventType: "CHECKPOINT_CREATED", message: "VERIFICATION_COMPLETED checkpoint" });
                 }
 
                 if (verification.status === "PASS") {
@@ -331,6 +343,8 @@ export class Orchestrator {
                         this.contractRepo.complete(verificationContractId, "PASS", "Milestone Verified", verification);
                         state.transition("COMPLETED");
                         this.milestoneRepo.updateStatus(milestoneId, "COMPLETED");
+                        eventEmitter.emit({ projectId, milestoneId, eventType: "VERIFICATION_PASSED" });
+                        eventEmitter.emit({ projectId, milestoneId, eventType: "MILESTONE_COMPLETED" });
                         
                         allIssues.forEach(issue => this.issueRepo.updateStatus(issue.id, "VERIFIED"));
                         
@@ -340,6 +354,7 @@ export class Orchestrator {
                     console.log(`[APOLLO] FAIL. Required fixes: ${verification.requiredFixes?.join(", ")}`);
                     this.contractRepo.complete(verificationContractId, "FAIL", "Verification Failed", verification);
                     context.verificationFeedback = verification;
+                    eventEmitter.emit({ projectId, milestoneId, eventType: "VERIFICATION_FAILED" });
                     
                     if (attemptNum >= MAX_VERIFICATION_ATTEMPTS) {
                         console.log(`[ORCHESTRATOR] Reached MAX_VERIFICATION_ATTEMPTS (${MAX_VERIFICATION_ATTEMPTS}). Stopping safely.`);
@@ -367,6 +382,7 @@ export class Orchestrator {
                                     attemptCount: 0,
                                     assignedRole: "developer"
                                 });
+                                eventEmitter.emit({ projectId, milestoneId, eventType: "FIX_CREATED", message: `Fix issue created: ${fix}` });
                             }
                         }
                     }
@@ -381,11 +397,15 @@ export class Orchestrator {
                     id: crypto.randomUUID(), projectId, milestoneId,
                     phase: state.phase, checkpointType: "PROJECT_COMPLETED"
                 });
+                eventEmitter.emit({ projectId, milestoneId, eventType: "CHECKPOINT_CREATED", message: "PROJECT_COMPLETED checkpoint" });
+                eventEmitter.emit({ projectId, milestoneId, eventType: "PROJECT_COMPLETED" });
             } else if (this.checkpointRepo && state.phase === "FAILED") {
                 this.checkpointRepo.create({
                     id: crypto.randomUUID(), projectId, milestoneId,
                     phase: state.phase, checkpointType: "PROJECT_FAILED"
                 });
+                eventEmitter.emit({ projectId, milestoneId, eventType: "CHECKPOINT_CREATED", message: "PROJECT_FAILED checkpoint" });
+                eventEmitter.emit({ projectId, milestoneId, eventType: "PROJECT_FAILED" });
             }
             
         } catch (error: any) {
@@ -397,7 +417,9 @@ export class Orchestrator {
                     phase: state.phase, checkpointType: "PROJECT_FAILED",
                     metadata: { error: error.message }
                 });
+                eventEmitter.emit({ projectId, milestoneId: context.currentMilestoneId || "", eventType: "CHECKPOINT_CREATED", message: "PROJECT_FAILED checkpoint" });
             }
+            eventEmitter.emit({ projectId, milestoneId: context.currentMilestoneId || "", eventType: "PROJECT_FAILED", message: error.message });
         }
         
         console.log(`[ORCHESTRATOR] Project ended with state: ${state.phase}`);

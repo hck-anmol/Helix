@@ -1,5 +1,6 @@
 import { ModelProvider } from "./ModelProvider";
 import { ModelRequest, ModelResponse } from "./models";
+import { eventEmitter } from "../observability/EventEmitter";
 
 export class OllamaProvider implements ModelProvider {
     private availableModelsCache: string[] | null = null;
@@ -19,13 +20,30 @@ export class OllamaProvider implements ModelProvider {
         }
     }
 
+    private emit(req: ModelRequest, eventType: "OLLAMA_CALL_STARTED" | "OLLAMA_CALL_COMPLETED" | "OLLAMA_CALL_FAILED", extra: any = {}) {
+        if (!req.context) return;
+        eventEmitter.emit({
+            projectId: req.context.projectId,
+            milestoneId: req.context.milestoneId,
+            issueId: req.context.issueId,
+            contractId: req.context.contractId,
+            agentRunId: req.context.agentRunId,
+            eventType,
+            ...extra
+        });
+    }
+
     async generate(modelId: string, request: ModelRequest): Promise<ModelResponse> {
         const start = Date.now();
         
+        this.emit(request, "OLLAMA_CALL_STARTED", { model: modelId });
+
         if (process.env.AGENT_OFFICE_MOCK_LLM !== 'true') {
             const availableModels = await this.getAvailableModels();
             if (availableModels.length > 0 && !availableModels.includes(modelId) && !availableModels.includes(modelId + ":latest")) {
-                throw new Error(`Ollama model '${modelId}' is not installed.\nAvailable models: ${availableModels.join(', ')}`);
+                const err = new Error(`Ollama model '${modelId}' is not installed.\nAvailable models: ${availableModels.join(', ')}`);
+                this.emit(request, "OLLAMA_CALL_FAILED", { model: modelId, durationMs: Date.now() - start, status: "FAILED", message: err.message, metadata: { errorType: "MODEL_NOT_FOUND" } });
+                throw err;
             }
         }
         
@@ -55,21 +73,31 @@ export class OllamaProvider implements ModelProvider {
 
             const data = await response.json();
             
+            const durationMs = Date.now() - start;
+            this.emit(request, "OLLAMA_CALL_COMPLETED", { model: data.model, durationMs, status: "SUCCESS", metadata: { responseSize: data.response?.length } });
+
             return {
                 content: data.response,
                 model: data.model,
-                durationMs: Date.now() - start
+                durationMs
             };
         } catch (error: any) {
+            const durationMs = Date.now() - start;
+            
+            let errorType = "UNKNOWN";
+            if (error.message.includes("fetch failed") || error.cause?.code === "ECONNREFUSED") errorType = "CONNECTION_ERROR";
+            else if (error.message.includes("Ollama API error")) errorType = "HTTP_ERROR";
+            
             if (process.env.AGENT_OFFICE_MOCK_LLM !== 'true') {
-                const elapsed = Date.now() - start;
                 const diag = {
                     model: modelId,
                     url: `${this.baseUrl}/api/generate`,
-                    elapsedMs: elapsed,
+                    elapsedMs: durationMs,
                     error: error.message || String(error)
                 };
                 console.error(`[OllamaProvider] Diagnostic: ${JSON.stringify(diag)}`);
+                
+                this.emit(request, "OLLAMA_CALL_FAILED", { model: modelId, durationMs, status: "FAILED", message: error.message, metadata: { errorType } });
                 throw new Error(`Ollama API error: ${error.message || String(error)}. Set AGENT_OFFICE_MOCK_LLM=true to use mock responses.`);
             }
             
@@ -92,10 +120,12 @@ export class OllamaProvider implements ModelProvider {
                 mockContent = JSON.stringify({ status: "COMPLETED", message: "Task done" });
             }
             
+            this.emit(request, "OLLAMA_CALL_COMPLETED", { model: modelId, durationMs, status: "SUCCESS", metadata: { mock: true } });
+
             return {
                 content: mockContent,
                 model: modelId,
-                durationMs: Date.now() - start
+                durationMs
             };
         }
     }

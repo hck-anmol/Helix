@@ -9,6 +9,7 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { z } from "zod";
+import { eventEmitter } from "../../observability/EventEmitter";
 
 const WorkerOutputSchema = z.object({
     status: z.enum(["COMPLETED", "FAILED"]),
@@ -98,23 +99,66 @@ Output strictly JSON matching this schema:
                     const tool = this.tools.find(t => t.name === call.tool);
                     if (tool) {
                         console.log(`[WORKER:${this.role}] Executing tool ${tool.name}...`);
-                        const toolResult = await tool.execute(call.args, { projectId: context.projectId, workspaceRoot: context.workspaceRoot });
-                        
-                        if (tool.name === "execute_shell") {
-                            const isTestCommand = call.args.command.includes("test") || call.args.command.includes("node");
-                            if (isTestCommand) {
-                                const sr = toolResult as any;
-                                result.data.testsRun.push({
-                                    command: sr.command,
-                                    status: sr.exitCode === 0 ? "PASSED" : "FAILED",
-                                    exitCode: sr.exitCode,
-                                    stdout: sr.stdout,
-                                    stderr: sr.stderr,
-                                    durationMs: sr.durationMs
-                                });
+                        eventEmitter.emit({
+                            projectId: context.projectId,
+                            milestoneId: context.currentMilestoneId,
+                            issueId: context.currentIssueId,
+                            contractId: (context as any).currentContractId,
+                            agentRunId: result.runId,
+                            eventType: "TOOL_STARTED",
+                            role: this.role,
+                            message: `Executing tool ${tool.name}`,
+                            metadata: { toolName: tool.name, args: call.args }
+                        });
+                        const start = Date.now();
+                        try {
+                            const toolResult = await tool.execute(call.args, { projectId: context.projectId, workspaceRoot: context.workspaceRoot });
+                            const durationMs = Date.now() - start;
+                            
+                            eventEmitter.emit({
+                                projectId: context.projectId,
+                                milestoneId: context.currentMilestoneId,
+                                issueId: context.currentIssueId,
+                                contractId: (context as any).currentContractId,
+                                agentRunId: result.runId,
+                                eventType: "TOOL_COMPLETED",
+                                role: this.role,
+                                durationMs,
+                                status: "SUCCESS",
+                                metadata: { toolName: tool.name }
+                            });
+                            
+                            if (tool.name === "execute_shell") {
+                                const isTestCommand = call.args.command.includes("test") || call.args.command.includes("node");
+                                if (isTestCommand) {
+                                    const sr = toolResult as any;
+                                    result.data.testsRun.push({
+                                        command: sr.command,
+                                        status: sr.exitCode === 0 ? "PASSED" : "FAILED",
+                                        exitCode: sr.exitCode,
+                                        stdout: sr.stdout,
+                                        stderr: sr.stderr,
+                                        durationMs: sr.durationMs
+                                    });
+                                }
+                            } else {
+                                console.log(`[WORKER:${this.role}] Tool result: ${String(toolResult).substring(0, 100)}...`);
                             }
-                        } else {
-                            console.log(`[WORKER:${this.role}] Tool result: ${String(toolResult).substring(0, 100)}...`);
+                        } catch (error: any) {
+                            const durationMs = Date.now() - start;
+                            eventEmitter.emit({
+                                projectId: context.projectId,
+                                milestoneId: context.currentMilestoneId,
+                                issueId: context.currentIssueId,
+                                contractId: (context as any).currentContractId,
+                                agentRunId: result.runId,
+                                eventType: "TOOL_FAILED",
+                                role: this.role,
+                                durationMs,
+                                status: "FAILED",
+                                message: error.message,
+                                metadata: { toolName: tool.name }
+                            });
                         }
                     }
                 }

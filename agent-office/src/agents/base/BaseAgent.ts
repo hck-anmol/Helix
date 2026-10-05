@@ -4,6 +4,7 @@ import { ModelRouter } from "../../llm/ModelRouter";
 import { AgentRunRepository } from "../../persistence/repositories/AgentRunRepository";
 import { config } from "../../config/config";
 import crypto from "crypto";
+import { eventEmitter } from "../../observability/EventEmitter";
 
 export abstract class BaseAgent<T = any> {
     protected constructor(
@@ -22,13 +23,32 @@ export abstract class BaseAgent<T = any> {
         const systemPrompt = this.getSystemPrompt(context);
         
         console.log(`[AGENT:${this.role}] Starting (MODEL USED: ${model})...`);
+        eventEmitter.emit({
+            projectId: context.projectId,
+            milestoneId: context.currentMilestoneId,
+            issueId: context.currentIssueId,
+            contractId: (context as any).currentContractId,
+            agentRunId: runId,
+            eventType: "AGENT_STARTED",
+            role: this.role,
+            model,
+            metadata: { contextHash: context.contextHash }
+        });
+
         const startTime = Date.now();
 
         try {
             const response = await this.router.route(this.role, {
                 systemPrompt,
                 prompt,
-                responseFormat: "json"
+                responseFormat: "json",
+                context: {
+                    projectId: context.projectId,
+                    milestoneId: context.currentMilestoneId,
+                    issueId: context.currentIssueId,
+                    contractId: (context as any).currentContractId,
+                    agentRunId: runId
+                }
             });
 
             const parsed = this.parseResponse(response.content);
@@ -39,6 +59,7 @@ export abstract class BaseAgent<T = any> {
                 projectId: context.projectId,
                 milestoneId: context.currentMilestoneId || "",
                 issueId: context.currentIssueId || "",
+                contractId: (context as any).currentContractId || "",
                 agentId: this.id,
                 role: this.role,
                 model,
@@ -51,14 +72,28 @@ export abstract class BaseAgent<T = any> {
             });
 
             console.log(`[AGENT:${this.role}] Completed in ${duration}ms.`);
+            eventEmitter.emit({
+                projectId: context.projectId,
+                milestoneId: context.currentMilestoneId,
+                issueId: context.currentIssueId,
+                contractId: (context as any).currentContractId,
+                agentRunId: runId,
+                eventType: "AGENT_COMPLETED",
+                role: this.role,
+                model,
+                durationMs: duration,
+                status: "SUCCESS"
+            });
             return { success: true, data: parsed, rawOutput: response.content, runId };
         } catch (error: any) {
             console.error(`[AGENT:${this.role}] Error:`, error.message);
+            const duration = Date.now() - startTime;
             this.runRepo.create({
                 id: runId,
                 projectId: context.projectId,
                 milestoneId: context.currentMilestoneId || "",
                 issueId: context.currentIssueId || "",
+                contractId: (context as any).currentContractId || "",
                 agentId: this.id,
                 role: this.role,
                 model,
@@ -67,8 +102,21 @@ export abstract class BaseAgent<T = any> {
                 status: "FAILED",
                 output: error.message,
                 contextHash: context.contextHash,
-                duration: Date.now() - startTime,
+                duration: duration,
                 error: error.message
+            });
+            eventEmitter.emit({
+                projectId: context.projectId,
+                milestoneId: context.currentMilestoneId,
+                issueId: context.currentIssueId,
+                contractId: (context as any).currentContractId,
+                agentRunId: runId,
+                eventType: "AGENT_FAILED",
+                role: this.role,
+                model,
+                durationMs: duration,
+                status: "FAILED",
+                message: error.message
             });
             return { success: false, error: error.message, runId };
         }

@@ -17,6 +17,7 @@ import crypto from "crypto";
 import { config } from "../config/config";
 import { ContextBuilder } from "../context/ContextBuilder";
 import { ContextSerializer } from "../context/ContextSerializer";
+import { eventEmitter } from "../observability/EventEmitter";
 
 export class ParallelExecutor {
     private maxConcurrency = config.maxConcurrency || 2;
@@ -72,6 +73,7 @@ export class ParallelExecutor {
                 
                 // CLAIM
                 this.issueRepo.updateStatus(issue.id, "CLAIMED");
+                eventEmitter.emit({ projectId: context.projectId, milestoneId, issueId: issue.id, eventType: "ISSUE_CLAIMED" });
                 
                 const p = this.executeIssue(issue, context).finally(() => {
                     this.runningTasks.delete(issue.id);
@@ -143,6 +145,7 @@ export class ParallelExecutor {
         const aresResult = await this.ares.invoke(prompt, context);
         if (!aresResult.success || !aresResult.data?.contracts || aresResult.data.contracts.length === 0) {
             this.issueRepo.updateStatus(issue.id, "FAILED");
+            eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, eventType: "ISSUE_FAILED", message: "Ares failed to schedule issue" });
             return;
         }
         
@@ -165,11 +168,14 @@ export class ParallelExecutor {
             createdAt: new Date().toISOString()
         };
         this.contractRepo.create(taskContract);
+        eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, contractId, eventType: "CONTRACT_CREATED", role: aresContract.receiver });
 
         console.log(`[WORKER:${aresContract.receiver}] Starting contract ${contractId} for Issue ${issue.id}`);
         this.contractRepo.updateStatus(contractId, "READY");
         this.issueRepo.updateStatus(issue.id, "RUNNING");
+        eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, eventType: "ISSUE_STARTED" });
         this.contractRepo.updateStatus(contractId, "RUNNING");
+        eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, contractId, eventType: "CONTRACT_STARTED" });
 
         if (this.checkpointRepo) {
             this.checkpointRepo.create({
@@ -220,7 +226,9 @@ export class ParallelExecutor {
         if (!workerResult.success || workerResult.data?.status === "FAILED") {
             console.error(`[WORKER:${aresContract.receiver}] Failed: ${workerResult.error || workerResult.data?.message}`);
             this.contractRepo.reject(contractId, workerResult.error || workerResult.data?.message || "Failed");
+            eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, contractId, eventType: "CONTRACT_FAILED", message: workerResult.error || workerResult.data?.message });
             this.issueRepo.updateStatus(issue.id, "FAILED");
+            eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, eventType: "ISSUE_FAILED" });
             this.issueRepo.incrementFixAttempts(issue.id);
             if (this.checkpointRepo) {
                 this.checkpointRepo.create({
@@ -233,6 +241,7 @@ export class ParallelExecutor {
         
         console.log(`[WORKER:${aresContract.receiver}] Success`);
         this.contractRepo.complete(contractId, "PASS", workerResult.data?.summary || "Success", workerResult.data);
+        eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, contractId, eventType: "CONTRACT_COMPLETED" });
         
         if (this.checkpointRepo) {
             this.checkpointRepo.create({
@@ -253,7 +262,10 @@ export class ParallelExecutor {
                 acceptanceCriteria: [], constraints: [], status: "CREATED" as const, createdAt: new Date().toISOString()
             };
             this.contractRepo.create(reviewContract);
+            eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, contractId: reviewContractId, eventType: "CONTRACT_CREATED", role: "reviewer" });
             this.contractRepo.updateStatus(reviewContractId, "RUNNING");
+            eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, contractId: reviewContractId, eventType: "CONTRACT_STARTED" });
+            eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, eventType: "REVIEW_STARTED" });
             
             console.log(`[REVIEWER] Inspecting ${artifactChanges.length} changes...`);
             let fileContents = "";
@@ -284,6 +296,8 @@ export class ParallelExecutor {
                     reviewPassed = false;
                     console.log(`[REVIEWER] FAIL. Required fixes identified.`);
                     this.contractRepo.complete(reviewContractId, "FAIL", "Review Failed", reviewResult.data);
+                    eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, contractId: reviewContractId, eventType: "CONTRACT_COMPLETED" });
+                    eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, eventType: "REVIEW_FAILED" });
                     
                     const blockingFindings = reviewResult.data.findings.filter((f: any) => f.severity === "CRITICAL" || f.severity === "HIGH");
                     if (blockingFindings.length > 0) {
@@ -297,6 +311,7 @@ export class ParallelExecutor {
                             description: `The reviewer rejected the implementation. Fix these issues:\n${fixDesc}`,
                             type: "FIX", priority: "HIGH", status: "READY", fixAttempts: 0, attemptCount: 0, assignedRole: "developer"
                         });
+                        eventEmitter.emit({ projectId, milestoneId, issueId: fixId, eventType: "FIX_CREATED", message: "Review fix created" });
                         for (const depId of this.issueRepo.getDependents(issue.id)) this.issueRepo.addDependency(depId, fixId);
                     } else {
                         this.issueRepo.updateStatus(issue.id, "RESOLVED");
@@ -305,12 +320,16 @@ export class ParallelExecutor {
                 } else {
                     console.log(`[REVIEWER] PASS`);
                     this.contractRepo.complete(reviewContractId, "PASS", "LGTM", reviewResult.data);
+                    eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, contractId: reviewContractId, eventType: "CONTRACT_COMPLETED" });
+                    eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, eventType: "REVIEW_PASSED" });
                 }
             } else {
                 console.error(`[REVIEWER] Failed to execute code review: ${reviewResult.error}`);
                 this.contractRepo.reject(reviewContractId, "Review execution failed");
+                eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, contractId: reviewContractId, eventType: "CONTRACT_FAILED" });
                 reviewPassed = false;
                 this.issueRepo.updateStatus(issue.id, "FAILED");
+                eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, eventType: "ISSUE_FAILED", message: "Review execution failed" });
                 this.issueRepo.incrementFixAttempts(issue.id);
             }
         }
@@ -327,7 +346,10 @@ export class ParallelExecutor {
                 acceptanceCriteria: [], constraints: [], status: "CREATED" as const, createdAt: new Date().toISOString()
             };
             this.contractRepo.create(testContract);
+            eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, contractId: testContractId, eventType: "CONTRACT_CREATED", role: "tester" });
             this.contractRepo.updateStatus(testContractId, "RUNNING");
+            eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, contractId: testContractId, eventType: "CONTRACT_STARTED" });
+            eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, eventType: "TEST_STARTED" });
             
             (context as any).currentContractId = testContractId;
             const testerWorker = this.workerFactory.createWorker("tester", testContract);
@@ -343,16 +365,22 @@ export class ParallelExecutor {
             }
             if (testResult.success && testResult.data?.status === "COMPLETED") {
                 this.contractRepo.complete(testContractId, "PASS", "Tests Executed", testResult.data);
+                eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, contractId: testContractId, eventType: "CONTRACT_COMPLETED" });
+                eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, eventType: "TEST_PASSED" });
             } else {
                 this.contractRepo.reject(testContractId, testResult.error || "Test execution failed");
+                eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, contractId: testContractId, eventType: "CONTRACT_FAILED" });
+                eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, eventType: "TEST_FAILED", message: testResult.error });
                 testPassed = false;
             }
         }
         
         if (reviewPassed && testPassed) {
             this.issueRepo.updateStatus(issue.id, "RESOLVED");
+            eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, eventType: "ISSUE_COMPLETED" });
         } else if (!testPassed) {
             this.issueRepo.updateStatus(issue.id, "FAILED");
+            eventEmitter.emit({ projectId, milestoneId, issueId: issue.id, eventType: "ISSUE_FAILED" });
             this.issueRepo.incrementFixAttempts(issue.id);
         }
     }

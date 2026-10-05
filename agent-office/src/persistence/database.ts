@@ -185,6 +185,29 @@ db.exec(`
         metadata TEXT,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS execution_events (
+        id TEXT PRIMARY KEY,
+        projectId TEXT NOT NULL,
+        milestoneId TEXT,
+        issueId TEXT,
+        contractId TEXT,
+        agentRunId TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        eventType TEXT NOT NULL,
+        role TEXT,
+        model TEXT,
+        durationMs INTEGER,
+        status TEXT,
+        message TEXT,
+        metadata TEXT,
+        FOREIGN KEY(projectId) REFERENCES projects(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_execution_events_projectId ON execution_events(projectId);
+    CREATE INDEX IF NOT EXISTS idx_execution_events_timestamp ON execution_events(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_execution_events_eventType ON execution_events(eventType);
+    CREATE INDEX IF NOT EXISTS idx_execution_events_issueId ON execution_events(issueId);
+    CREATE INDEX IF NOT EXISTS idx_execution_events_agentRunId ON execution_events(agentRunId);
 `);
 
 // Auto-migrate to add sourceVerificationId if it doesn't exist

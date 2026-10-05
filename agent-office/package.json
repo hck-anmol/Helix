@@ -22,7 +22,8 @@
     "demo-resume": "ts-node src/demo-resume.ts",
     "demo-real-ollama": "ts-node src/demo-real-ollama.ts",
     "checkpoints": "ts-node src/checkpoints.ts",
-    "resume": "ts-node src/resume.ts"
+    "resume": "ts-node src/resume.ts",
+    "events": "ts-node src/events-cli.ts"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
