@@ -7,17 +7,27 @@ You will receive:
 2. The exact files that were modified, created, or deleted.
 3. The file contents or snippets showing what the worker did.
 
-You must return ONLY a RAW JSON response with the following structure:
+You must return ONLY a RAW JSON response that strictly follows this example structure.
+Do NOT use the | character or pseudo-code in your output. Return real valid JSON.
+
+Example of a PASS response:
 {
-    "status": "PASS" | "FAIL",
-    "summary": "High-level summary of the review",
+    "status": "PASS",
+    "summary": "The code meets all requirements.",
+    "findings": []
+}
+
+Example of a FAIL response:
+{
+    "status": "FAIL",
+    "summary": "There are critical issues.",
     "findings": [
         {
-            "severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO",
-            "file": "path/to/file.ts",
+            "severity": "CRITICAL",
+            "file": "src/main.cpp",
             "line": 10,
-            "message": "Description of the finding",
-            "requiredFix": "What must be done to fix this (for CRITICAL/HIGH)"
+            "message": "Used namespace std",
+            "requiredFix": "Remove using namespace std and use std:: instead."
         }
     ]
 }

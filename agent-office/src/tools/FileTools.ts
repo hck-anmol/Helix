@@ -1,6 +1,7 @@
 import { Tool, ToolContext } from "./Tool";
 import fs from "fs";
 import path from "path";
+import { stripMarkdownFences, validateCppContent, isCppFile } from "../utils/CppValidator";
 
 function getSafePath(workspaceRoot: string, targetPath: string): string {
     const resolved = path.resolve(workspaceRoot, targetPath);
@@ -29,7 +30,26 @@ export class WriteFileTool implements Tool {
         const fullPath = getSafePath(context.workspaceRoot, args.path);
         const dir = path.dirname(fullPath);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(fullPath, args.content, "utf-8");
+
+        let content = args.content;
+
+        // Strip markdown fences for all source files
+        const strippedContent = stripMarkdownFences(content);
+        if (strippedContent !== content) {
+            console.log(`[WriteFileTool] Stripped markdown fences from ${args.path}`);
+            content = strippedContent;
+        }
+
+        // Validate C/C++ source files before writing
+        if (isCppFile(args.path)) {
+            const validation = validateCppContent(content, args.path);
+            if (!validation.valid) {
+                const errorMessages = validation.errors.map(e => `[${e.type}] ${e.message}`).join("\n");
+                throw new Error(`C++ validation failed for ${args.path}:\n${errorMessages}`);
+            }
+        }
+
+        fs.writeFileSync(fullPath, content, "utf-8");
         return `Successfully wrote to ${args.path}`;
     }
 }
@@ -42,6 +62,34 @@ export class ListFilesTool implements Tool {
         const fullPath = getSafePath(context.workspaceRoot, args.path || ".");
         if (!fs.existsSync(fullPath)) return "Directory not found.";
         const files = fs.readdirSync(fullPath);
-        return files.join("\\n");
+        return files.join("\n");
+    }
+}
+
+export class CopyTemplateTool implements Tool {
+    name = "copy_template";
+    description = "Copies a demo template project into the current workspace. Args: { \"templateName\": \"dijkstra\" }";
+
+    async execute(args: { templateName: string }, context: ToolContext): Promise<string> {
+        // demo-templates/ lives two levels above the per-project workspace (projects/<id>/)
+        const templatePath = path.resolve(context.workspaceRoot, "../../demo-templates", args.templateName);
+        if (!fs.existsSync(templatePath)) {
+            throw new Error(`Template '${args.templateName}' not found at ${templatePath}`);
+        }
+
+        const copyRecursiveSync = (src: string, dest: string) => {
+            const stat = fs.statSync(src);
+            if (stat.isDirectory()) {
+                if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+                for (const child of fs.readdirSync(src)) {
+                    copyRecursiveSync(path.join(src, child), path.join(dest, child));
+                }
+            } else {
+                fs.copyFileSync(src, dest);
+            }
+        };
+
+        copyRecursiveSync(templatePath, context.workspaceRoot);
+        return `Template '${args.templateName}' copied successfully into workspace. Files are now in: src/, tests/`;
     }
 }

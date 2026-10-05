@@ -23,16 +23,20 @@
     "demo-real-ollama": "ts-node src/demo-real-ollama.ts",
     "checkpoints": "ts-node src/checkpoints.ts",
     "resume": "ts-node src/resume.ts",
-    "events": "ts-node src/events-cli.ts"
+    "events": "ts-node src/events-cli.ts",
+    "agent": "ts-node src/cli/AgentCLI.ts"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
+    "chalk": "^4.1.2",
     "dotenv": "^16.4.5",
     "express": "^5.2.1",
+    "ora": "^5.4.1",
     "zod": "^3.22.4"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.9",
+    "@types/chalk": "^0.4.31",
     "@types/node": "^20.11.19",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"

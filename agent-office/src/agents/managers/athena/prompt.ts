@@ -9,7 +9,7 @@ Do NOT output anything except valid JSON matching this schema:
   "budget": 3,
   "suggestedTasks": [
     {
-      "title": "Create user model",
+      "title": "<Specific task title derived from the project spec>",
       "type": "TASK"
     }
   ]

@@ -15,7 +15,7 @@ export class WorkerFactory {
         // Simple permission assignment based on role
         let allowedTools: Tool[] = [];
         if (role === "developer") {
-            allowedTools = this.availableTools.filter(t => ["read_file", "write_file", "list_files", "execute_shell"].includes(t.name));
+            allowedTools = this.availableTools.filter(t => ["read_file", "write_file", "list_files", "execute_shell", "copy_template"].includes(t.name));
         } else if (role === "tester") {
             allowedTools = this.availableTools.filter(t => ["read_file", "write_file", "execute_shell"].includes(t.name));
         } else {
