@@ -1,6 +1,5 @@
 import { db } from "../src/persistence/database";
-import { TestResultRepository } from "../src/persistence/repositories/TestResultRepository";
-import { TestResult } from "../src/projects/TestResult";
+import { TestResultRepository, TestResult } from "../src/persistence/repositories/TestResultRepository";
 import crypto from "crypto";
 import assert from "assert";
 

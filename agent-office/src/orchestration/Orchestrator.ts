@@ -42,8 +42,11 @@ export class Orchestrator {
         private verificationRepo: VerificationRepository,
         private testResultRepo: TestResultRepository,
         private artifactChangeRepo: ArtifactChangeRepository,
-        private codeReviewRepo: CodeReviewRepository
+        private codeReviewRepo: CodeReviewRepository,
+        private checkpointRepo?: any,
+        private runRepoParam?: any
     ) {
+
         this.contextBuilder = new ContextBuilder(
             projectRepo, milestoneRepo, issueRepo, this.runRepo,
             codeReviewRepo, artifactChangeRepo, testResultRepo, verificationRepo
@@ -62,7 +65,15 @@ export class Orchestrator {
         context.contextHash = ContextSerializer.hash(serialized);
     }
 
+
+    async resumeProject(projectId: string) {
+        console.log("[ORCHESTRATOR] Resuming project " + projectId);
+        // Fallback to runProject for now in ParallelExecutor branch
+        return this.runProject(projectId);
+    }
+
     async runProject(projectId: string) {
+
         const project = this.projectRepo.get(projectId);
         if (!project) throw new Error("Project not found");
 

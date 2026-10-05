@@ -38,4 +38,9 @@ export class MilestoneRepository {
         const stmt = db.prepare(`SELECT * FROM milestones WHERE projectId = ? AND status = 'PENDING' LIMIT 1`);
         return stmt.get(projectId) as MilestoneRecord | undefined;
     }
+
+    getLatestByProject(projectId: string): MilestoneRecord | undefined {
+        const stmt = db.prepare(`SELECT * FROM milestones WHERE projectId = ? ORDER BY rowid DESC LIMIT 1`);
+        return stmt.get(projectId) as MilestoneRecord | undefined;
+    }
 }

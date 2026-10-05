@@ -98,7 +98,7 @@ export class IssueRepository {
 
             if (isBlocked && issue.status !== 'BLOCKED') {
                 this.updateStatus(issue.id, 'BLOCKED');
-            } else if (!isBlocked && (issue.status === 'BLOCKED' || issue.status === 'PENDING')) {
+            } else if (!isBlocked && (issue.status === 'BLOCKED' || issue.status === 'PENDING' || issue.status === 'FAILED')) {
                 this.updateStatus(issue.id, 'READY');
             }
         }

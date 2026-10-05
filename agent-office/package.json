@@ -18,7 +18,10 @@
     "demo-contracts": "ts-node src/demo-contracts.ts",
     "demo-contract-failure": "ts-node src/demo-contract-failure.ts",
     "demo-parallel": "ts-node src/demo-parallel.ts",
-    "demo-parallel-failure": "ts-node src/demo-parallel-failure.ts"
+    "demo-parallel-failure": "ts-node src/demo-parallel-failure.ts",
+    "demo-resume": "ts-node src/demo-resume.ts",
+    "checkpoints": "ts-node src/checkpoints.ts",
+    "resume": "ts-node src/resume.ts"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

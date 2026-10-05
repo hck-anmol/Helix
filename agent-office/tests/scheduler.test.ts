@@ -2,6 +2,7 @@ import { IssueRepository } from "../src/persistence/repositories/IssueRepository
 import { ProjectRepository } from "../src/persistence/repositories/ProjectRepository";
 import { MilestoneRepository } from "../src/persistence/repositories/MilestoneRepository";
 import { Scheduler } from "../src/orchestration/Scheduler";
+import { IssuePriority } from "../src/projects/Issue";
 import crypto from "crypto";
 
 export async function run() {
@@ -31,7 +32,7 @@ export async function run() {
         verificationAttempts: 0
     });
 
-    function createIssue(id: string, priority: string) {
+    function createIssue(id: string, priority: IssuePriority) {
         issueRepo.create({
             id,
             projectId,
@@ -41,7 +42,8 @@ export async function run() {
             type: "TASK",
             priority,
             status: "PENDING",
-            fixAttempts: 0
+            fixAttempts: 0,
+            attemptCount: 0
         });
     }
 

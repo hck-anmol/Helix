@@ -97,4 +97,20 @@ export class ArtifactSnapshot {
 
         return changes;
     }
+
+    static serialize(snapshot: Snapshot): Record<string, SnapshotFile> {
+        const obj: Record<string, SnapshotFile> = {};
+        for (const [key, val] of snapshot.entries()) {
+            obj[key] = val;
+        }
+        return obj;
+    }
+
+    static deserialize(obj: Record<string, SnapshotFile>): Snapshot {
+        const map = new Map<string, SnapshotFile>();
+        for (const key of Object.keys(obj)) {
+            map.set(key, obj[key]);
+        }
+        return map;
+    }
 }

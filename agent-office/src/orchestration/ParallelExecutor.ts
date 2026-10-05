@@ -241,7 +241,7 @@ export class ParallelExecutor {
             if (reviewResult.success && reviewResult.data) {
                 this.codeReviewRepo.create({
                     id: crypto.randomUUID(), projectId, milestoneId, issueId: issue.id, agentRunId: reviewResult.runId!,
-                    status: reviewResult.data.status, summary: reviewResult.data.summary, findings: reviewResult.data.findings, filesReviewed: artifactChanges.map((c: any) => c.path)
+                    status: reviewResult.data.status, summary: reviewResult.data.summary, findings: JSON.stringify(reviewResult.data.findings), filesReviewed: JSON.stringify(artifactChanges.map((c: any) => c.path))
                 });
 
                 if (reviewResult.data.status === "FAIL") {
