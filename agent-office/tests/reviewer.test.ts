@@ -130,7 +130,8 @@ export async function run() {
     // 8. Reviewer fails first attempt but succeeds second
     provider.responses = ["FAIL_PARSE", "PASS"];
     invokeCount = 0;
-    await (executor as any).executeIssue(issue, context);
+    const testContext = { ...context, projectId: pid, currentMilestoneId: mid };
+    await (executor as any).executeIssue(issue, testContext);
     if (invokeCount !== 2) throw new Error("Failed 8: Should have retried once. Expected 2 invocations, got " + invokeCount);
     if (issueRepo.get(issue.id)?.status !== "RESOLVED") throw new Error("Failed 8: Issue should be RESOLVED");
 
@@ -140,7 +141,7 @@ export async function run() {
     provider.responses = ["FAIL_PARSE", "FAIL_PARSE", "FAIL_PARSE", "PASS"];
     invokeCount = 0;
     artifactChangeRepo.listByIssue = () => [{ id: "ac2", projectId: pid, milestoneId: mid, issueId: issue2.id, agentRunId: "r1", path: "test.ts", changeType: "MODIFIED", beforeHash: "", afterHash: "", beforeSize: 0, afterSize: 0, createdAt: "" }];
-    await (executor as any).executeIssue(issue2, context);
+    await (executor as any).executeIssue(issue2, testContext);
     if (invokeCount !== 3) throw new Error("Failed 9/10: Should have stopped after 3 attempts. Got " + invokeCount);
     // After 3 parse failures the review gate is bypassed: issue proceeds to RESOLVED (not FAILED)
     if (issueRepo.get(issue2.id)?.status !== "RESOLVED") throw new Error("Failed 9: Issue should be RESOLVED after 3 review parse failures (bypass gate)");
